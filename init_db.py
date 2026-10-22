@@ -1,3 +1,4 @@
+from werkzeug.security import generate_password_hash
 import sqlite3
 
 def veritabanini_kur():
@@ -70,6 +71,16 @@ def veritabanini_kur():
         FOREIGN KEY (DersId) REFERENCES Ders(Id)
     )
     """)
+    # 7. Kullanıcı Tablosu (Hafta 5 - Kimlik Doğrulama)
+    imlec.execute("""
+    CREATE TABLE IF NOT EXISTS Kullanici (
+        Id INTEGER PRIMARY KEY AUTOINCREMENT,
+        KullaniciAdi TEXT UNIQUE NOT NULL,
+        Eposta TEXT UNIQUE NOT NULL,
+        ParolaHash TEXT NOT NULL,
+        Rol TEXT NOT NULL DEFAULT 'ogrenci'
+    )
+    """)
 
     # --- HAFTA 4: Sentetik (Sahte) Veri Ekleme ---
     # Tablolar boşsa örnek verileri ekleyelim
@@ -86,6 +97,16 @@ def veritabanini_kur():
         imlec.execute("INSERT INTO Sube (DersId, HocaAdi, Gun, Saat) VALUES (1, 'Dr. Ali Veli', 'Pazartesi', '09:00')")
         imlec.execute("INSERT INTO Sube (DersId, HocaAdi, Gun, Saat) VALUES (2, 'Doç. Ayşe Kara', 'Salı', '13:00')")
 
+    # Örnek Kullanıcılar (Hafta 5)
+    imlec.execute("SELECT COUNT(*) FROM Kullanici")
+    if imlec.fetchone()[0] == 0:
+        admin_hash = generate_password_hash("admin123")
+        ogrenci_hash = generate_password_hash("123456")
+        
+        imlec.execute("INSERT INTO Kullanici (KullaniciAdi, Eposta, ParolaHash, Rol) VALUES (?, ?, ?, ?)",
+                      ("admin", "admin@bingol.edu.tr", admin_hash, "yonetici"))
+        imlec.execute("INSERT INTO Kullanici (KullaniciAdi, Eposta, ParolaHash, Rol) VALUES (?, ?, ?, ?)",
+                      ("ogrenci", "ogrenci@bingol.edu.tr", ogrenci_hash, "ogrenci"))
     baglanti.commit()
     baglanti.close()
     print("Veritabanı ve tablolar başarıyla oluşturuldu, sahte veriler yüklendi!")

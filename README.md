@@ -22,3 +22,7 @@ göre seçmeli ders önerileri almasını sağlamak.
 - Ders çakışma tespiti
 - Seçmeli ders önerisi
 - Kullanıcı yönetimi
+## Hafta 5: Kullanıcı Yönetimi, Kimlik Doğrulama ve Güvenlik Notu
+- **Parola Güvenliği:** Kullanıcı parolaları veritabanında kesinlikle düz metin (plain text) olarak saklanmamaktadır. `werkzeug.security` kütüphanesi ile PBKDF2/SHA256 algoritması kullanılarak salt eklenip güvenli şekilde hash'lenmiştir.
+- **Oturum Yönetimi:** Giriş yapan kullanıcıların kimlik ve rol bilgileri Flask `session` yapısı ile yönetilmektedir. Kullanıcı çıkış yaptığında oturum tamamen sonlandırılır.
+- **Rol Tabanlı Yetkilendirme (RBAC):** Sistemde `ogrenci` ve `yonetici` rolleri tanımlanmıştır. Yönetici gerektiren uç noktalara yetkisiz kullanıcılar erişmek istediğinde HTTP 403 Forbidden engeli uygulanmaktadır.
