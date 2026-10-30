@@ -25,8 +25,20 @@ def veritabanini_kur():
         AKTS INTEGER NOT NULL
     )
     """)
-
-    # 3. Sube Tablosu (1-N İlişki: Bir dersin birden çok şubesi olur)
+    # 3. Sube Tablosu (Ders saatleri ve günleri için)
+    imlec.execute("""
+    CREATE TABLE IF NOT EXISTS Sube (
+        Id INTEGER PRIMARY KEY AUTOINCREMENT,
+        DersId INTEGER NOT NULL,
+        SubeKodu TEXT NOT NULL,
+        Gun TEXT NOT NULL,
+        BaslangicSaati TEXT NOT NULL,
+        BitisSaati TEXT NOT NULL,
+        OgretimElemani TEXT,
+        FOREIGN KEY (DersId) REFERENCES Ders(Id)
+    )
+   """)
+    # 3. Sube Tablosu (1-N İliki: Bir dersin birden çok şubesi olur)
     imlec.execute("""
     CREATE TABLE IF NOT EXISTS Sube (
         Id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -55,7 +67,8 @@ def veritabanini_kur():
         ProgramId INTEGER NOT NULL,
         SubeId INTEGER NOT NULL,
         FOREIGN KEY (ProgramId) REFERENCES Program(Id),
-        FOREIGN KEY (SubeId) REFERENCES Sube(Id)
+        FOREIGN KEY (SubeId) REFERENCES Sube(Id),
+        UNIQUE(ProgramId, SubeId)
     )
     """)
 
@@ -64,31 +77,14 @@ def veritabanini_kur():
     CREATE TABLE IF NOT EXISTS Tercih (
         Id INTEGER PRIMARY KEY AUTOINCREMENT,
         OgrenciId INTEGER NOT NULL,
-        DersId INTEGER NOT NULL,
-        OncelikSirasi INTEGER NOT NULL,
-        FOREIGN KEY (OgrenciId) REFERENCES Ogrenci(Id),
-        FOREIGN KEY (DersId) REFERENCES Ders(Id)
+        Alan TEXT NOT NULL,
+        FOREIGN KEY (OgrenciId) REFERENCES Ogrenci(Id)
     )
     """)
 
-    # --- HAFTA 4: Sentetik (Sahte) Veri Ekleme ---
-    # Tablolar boşsa örnek verileri ekleyelim
-    imlec.execute("SELECT COUNT(*) FROM Ogrenci")
-    if imlec.fetchone()[0] == 0:
-        # Örnek Öğrenci
-        imlec.execute("INSERT INTO Ogrenci (Ad, Soyad, OgrenciNo) VALUES ('Ahmet', 'Yılmaz', '220101001')")
-        
-        # Örnek Dersler
-        imlec.execute("INSERT INTO Ders (DersKodu, DersAdi, Kredi, AKTS) VALUES ('BIL101', 'Programlama Temelleri', 3, 5)")
-        imlec.execute("INSERT INTO Ders (DersKodu, DersAdi, Kredi, AKTS) VALUES ('MAT101', 'Genel Matematik', 4, 6)")
-        
-        # Örnek Şubeler
-        imlec.execute("INSERT INTO Sube (DersId, HocaAdi, Gun, Saat) VALUES (1, 'Dr. Ali Veli', 'Pazartesi', '09:00')")
-        imlec.execute("INSERT INTO Sube (DersId, HocaAdi, Gun, Saat) VALUES (2, 'Doç. Ayşe Kara', 'Salı', '13:00')")
-
     baglanti.commit()
     baglanti.close()
-    print("Veritabanı ve tablolar başarıyla oluşturuldu, sahte veriler yüklendi!")
+    print("Veritabanı ve tüm tablolar başarıyla oluşturuldu!")
 
 if __name__ == "__main__":
     veritabanini_kur()

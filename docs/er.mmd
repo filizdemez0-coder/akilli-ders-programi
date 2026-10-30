@@ -1,0 +1,55 @@
+erDiagram
+    KULLANICI ||--o| OGRENCI : "hesabidir"
+    OGRENCI ||--o{ PROGRAM : "sahiptir"
+    OGRENCI ||--o{ TERCIH : "yapar"
+    DERS ||--o{ TERCIH : "hedef"
+    DERS ||--o{ SUBE : "icerir"
+    PROGRAM ||--o{ PROGRAM_DERSLERI : "secilir"
+    SUBE ||--o{ PROGRAM_DERSLERI : "baglanir"
+    KULLANICI {
+        int Id PK
+        string KullaniciAdi UK
+        string Eposta UK
+        string ParolaHash
+        string Rol
+    }
+    OGRENCI {
+        int Id PK
+        string Ad
+        string Soyad
+        string OgrenciNo UK
+        int KullaniciId FK,UK
+    }
+    DERS {
+        int Id PK
+        string DersKodu UK
+        string DersAdi
+        int Kredi
+        int AKTS
+    }
+    SUBE {
+        int Id PK
+        int DersId FK
+        string HocaAdi
+        string Gun
+        string Saat "baslangic"
+        string BitisSaati "Hafta 7"
+    }
+    PROGRAM {
+        int Id PK
+        int OgrenciId FK
+        string Donem
+        int Kaydedildi "Hafta 6"
+        string PaylasimKodu "Hafta 6"
+    }
+    PROGRAM_DERSLERI {
+        int Id PK
+        int ProgramId FK
+        int SubeId FK
+    }
+    TERCIH {
+        int Id PK
+        int OgrenciId FK
+        int DersId FK
+        int OncelikSirasi
+    }

@@ -1,0 +1,21 @@
+flowchart TB
+    T["Tarayıcı (Öğrenci / Yönetici)"]
+    subgraph S["Sunum katmanı — backend/app.py"]
+        R["Flask rotaları: /giris /kayit /panel /dersler /program/* /paylas /yonetici/katalog"]
+        J["Jinja şablonları (otomatik HTML kaçışlama)"]
+        A["Yetkilendirme: giris_gerekli, yonetici_gerekli"]
+    end
+    subgraph I["İş katmanı"]
+        K["İş kuralları K1–K6 (app.py)"]
+        C["Çakışma tespiti — backend/cakisma.py"]
+    end
+    subgraph V["Veri katmanı"]
+        M["Şema güncelleme — backend/sema.py, init_db.py"]
+        D[("SQLite — database/proje.db")]
+    end
+    T -->|HTTP| R
+    R --> A --> K
+    K --> C
+    K --> D
+    M --> D
+    R --> J --> T

@@ -1,0 +1,14 @@
+# Sanal ortam ve Python önbellekleri
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# Ortam değişkenleri / gizli bilgiler
+.env
+
+# Editör ve işletim sistemi dosyaları
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store

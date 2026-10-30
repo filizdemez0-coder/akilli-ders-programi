@@ -1,9 +1,14 @@
 from werkzeug.security import generate_password_hash
 import sqlite3
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "backend"))
+from sema import sema_guncelle, ornek_veri_ekle
 
 def veritabanini_kur():
     # SQLite veritabanı dosyasını database klasöründe açar
-    baglanti = sqlite3.connect("database/proje.db")
+    baglanti = sqlite3.connect(os.path.join(os.path.dirname(os.path.abspath(__file__)), "database", "proje.db"))
     imlec = baglanti.cursor()
 
     # 1. Ogrenci Tablosu
@@ -12,7 +17,8 @@ def veritabanini_kur():
         Id INTEGER PRIMARY KEY AUTOINCREMENT,
         Ad TEXT NOT NULL,
         Soyad TEXT NOT NULL,
-        OgrenciNo TEXT UNIQUE NOT NULL
+        OgrenciNo TEXT UNIQUE NOT NULL,
+        KullaniciId INTEGER REFERENCES Kullanici(Id)   -- Hafta 6: giriş hesabı bağlantısı
     )
     """)
 
@@ -34,7 +40,8 @@ def veritabanini_kur():
         DersId INTEGER NOT NULL,
         HocaAdi TEXT NOT NULL,
         Gun TEXT NOT NULL,
-        Saat TEXT NOT NULL,
+        Saat TEXT NOT NULL,          -- Başlangıç saati (SS:DD)
+        BitisSaati TEXT,             -- Hafta 7: Bitiş saati (SS:DD)
         FOREIGN KEY (DersId) REFERENCES Ders(Id)
     )
     """)
@@ -45,6 +52,8 @@ def veritabanini_kur():
         Id INTEGER PRIMARY KEY AUTOINCREMENT,
         OgrenciId INTEGER NOT NULL,
         Donem TEXT NOT NULL,
+        Kaydedildi INTEGER NOT NULL DEFAULT 0,   -- Hafta 6: Kaydet
+        PaylasimKodu TEXT,                        -- Hafta 6: Paylaş
         FOREIGN KEY (OgrenciId) REFERENCES Ogrenci(Id)
     )
     """)
@@ -56,7 +65,8 @@ def veritabanini_kur():
         ProgramId INTEGER NOT NULL,
         SubeId INTEGER NOT NULL,
         FOREIGN KEY (ProgramId) REFERENCES Program(Id),
-        FOREIGN KEY (SubeId) REFERENCES Sube(Id)
+        FOREIGN KEY (SubeId) REFERENCES Sube(Id),
+        UNIQUE(ProgramId, SubeId)
     )
     """)
 
@@ -94,8 +104,8 @@ def veritabanini_kur():
         imlec.execute("INSERT INTO Ders (DersKodu, DersAdi, Kredi, AKTS) VALUES ('MAT101', 'Genel Matematik', 4, 6)")
         
         # Örnek Şubeler
-        imlec.execute("INSERT INTO Sube (DersId, HocaAdi, Gun, Saat) VALUES (1, 'Dr. Ali Veli', 'Pazartesi', '09:00')")
-        imlec.execute("INSERT INTO Sube (DersId, HocaAdi, Gun, Saat) VALUES (2, 'Doç. Ayşe Kara', 'Salı', '13:00')")
+        imlec.execute("INSERT INTO Sube (DersId, HocaAdi, Gun, Saat, BitisSaati) VALUES (1, 'Dr. Ali Veli', 'Pazartesi', '09:00', '11:00')")
+        imlec.execute("INSERT INTO Sube (DersId, HocaAdi, Gun, Saat, BitisSaati) VALUES (2, 'Doç. Ayşe Kara', 'Salı', '13:00', '15:00')")
 
     # Örnek Kullanıcılar (Hafta 5)
     imlec.execute("SELECT COUNT(*) FROM Kullanici")
@@ -108,6 +118,10 @@ def veritabanini_kur():
         imlec.execute("INSERT INTO Kullanici (KullaniciAdi, Eposta, ParolaHash, Rol) VALUES (?, ?, ?, ?)",
                       ("ogrenci", "ogrenci@bingol.edu.tr", ogrenci_hash, "ogrenci"))
     baglanti.commit()
+
+    # Hafta 6-7: eski veritabanlarına eksik sütunları ekle + çakışma örnek verileri
+    sema_guncelle(baglanti)
+    ornek_veri_ekle(baglanti)
     baglanti.close()
     print("Veritabanı ve tablolar başarıyla oluşturuldu, sahte veriler yüklendi!")
 
