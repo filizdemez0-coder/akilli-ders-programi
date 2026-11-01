@@ -9,7 +9,9 @@ from datetime import timedelta
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from sema import sema_guncelle, ornek_veri_ekle
-from sayfalar import KAMU_SABLON, KAMU_SON, ANA_SAYFA, GIRIS_SAYFASI, KAYIT_SAYFASI
+from sayfalar import (KAMU_SABLON, KAMU_SON, ANA_SAYFA, GIRIS_SAYFASI, KAYIT_SAYFASI,
+                      UYGULAMA_SABLON, UYGULAMA_SON, PANEL, DERSLER, CAKISMA_UYARISI, PAYLAS,
+                      KATALOG_YONETIMI, MESAJ_SAYFASI)
 from cakisma import (GUNLER, zaman_araligi_dogrula, yeni_oturum_cakismalari,
                      program_cakismalari, dakikaya_cevir)
 
@@ -72,38 +74,27 @@ with sqlite3.connect(DB_PATH) as _c:
     ornek_veri_ekle(_c)
 
 
-# ---------------- Ortak sayfa şablonu ----------------
-SABLON = """
-<!doctype html><html lang="tr"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{ baslik }}</title>
-<style>
- body{font-family:system-ui,Segoe UI,Arial,sans-serif;margin:24px;max-width:1100px;color:#222}
- table{border-collapse:collapse;width:100%;margin:8px 0 20px}
- th,td{border:1px solid #ccc;padding:6px 8px;text-align:left;vertical-align:top}
- th{background:#f2f2f2}
- .hata{background:#fdecea;border:1px solid #f5c2c0;padding:10px;border-radius:6px}
- .uyari{background:#fff4e5;border:1px solid #ffd59e;padding:10px;border-radius:6px}
- .basari{background:#e8f5e9;border:1px solid #b7dfb9;padding:10px;border-radius:6px}
- tr.cakisan td{background:#fdecea}
- .etiket{font-size:12px;padding:2px 6px;border-radius:10px;background:#eee}
- .gun-hucre div{background:#eef3ff;border-left:3px solid #4a6cf7;margin:3px 0;padding:3px 5px;font-size:13px}
- .gun-hucre div.cakisan{background:#fdecea;border-left-color:#d93025}
- form.satir{display:inline}
- input,select{padding:4px;margin:2px}
-</style></head><body>
-<p><a href="/panel">Panel</a> · <a href="/dersler">Ders Kataloğu</a>
-{% if session.get('rol') == 'yonetici' %} · <a href="/yonetici/katalog">Katalog Yönetimi</a>{% endif %}
-{% if session.get('kullanici_id') %} · <a href="/cikis">Çıkış ({{ session.get('kullanici_adi') }})</a>{% endif %}</p>
-{% with mesajlar = get_flashed_messages(with_categories=true) %}
-  {% for kat, m in mesajlar %}<p class="{{ kat }}">{{ m }}</p>{% endfor %}
-{% endwith %}
-"""
-
-
+# ---------------- Ortak sayfa şablonu (arayüz: sayfalar.py) ----------------
 def sayfa(govde, **baglam):
     baglam.setdefault("baslik", "Akıllı Ders Programı")
-    return render_template_string(SABLON + govde + "</body></html>", **baglam)
+    baglam.setdefault("aktif", "")
+    return render_template_string(UYGULAMA_SABLON + govde + UYGULAMA_SON, **baglam)
+
+
+def mesaj_sayfasi(ikon, baslik, aciklama, kod):
+    return sayfa(MESAJ_SAYFASI, ikon=ikon, baslik=baslik, aciklama=aciklama), kod
+
+
+@app.errorhandler(403)
+def hata_403(_e):
+    return mesaj_sayfasi("🔒", "Bu işlem için yetkiniz yok",
+                         "Yalnızca kendi kayıtlarınızı değiştirebilirsiniz.", 403)
+
+
+@app.errorhandler(404)
+def hata_404(_e):
+    return mesaj_sayfasi("🔍", "Sayfa bulunamadı",
+                         "Aradığınız kayıt silinmiş ya da bağlantı hatalı olabilir.", 404)
 
 
 # ---------------- Yetkilendirme dekoratörleri (Hafta 5) ----------------
@@ -122,7 +113,8 @@ def yonetici_gerekli(f):
         if 'kullanici_id' not in session:
             return redirect(url_for('giris'))
         if session.get('rol') != 'yonetici':
-            return "<h2>403 - Yetkisiz Erişim!</h2><p>Bu sayfaya yalnızca <b>Yönetici</b> rolündeki kullanıcılar erişebilir.</p><a href='/panel'>Panele Dön</a>", 403
+            return mesaj_sayfasi("🔒", "403 · Yetkisiz erişim",
+                                 "Bu sayfaya yalnızca Yönetici rolündeki kullanıcılar erişebilir.", 403)
         return f(*args, **kwargs)
     return decorated_function
 
@@ -206,27 +198,28 @@ def giris():
 @app.route('/panel')
 @giris_gerekli
 def panel():
-    return sayfa("""
-    <h2>Kullanıcı Paneli</h2>
-    <p>Giriş Yapan: <b>{{ session.kullanici_adi }}</b> — Rolünüz: <b>{{ session.rol }}</b></p>
-    <ul>
-        <li><a href="/dersler">Ders Kataloğu ve Program Oluşturucu (Hafta 6) + Çakışma Tespiti (Hafta 7)</a></li>
-        <li><a href="/yonetici/katalog">Katalog Yönetimi — ders/şube ekle (yalnızca yönetici)</a></li>
-        <li><a href="/admin-paneli">Yönetici Özel Sayfası</a> (Rol testi için)</li>
-        <li><a href="/cikis">Çıkış Yap</a></li>
-    </ul>
-    """, baslik="Panel")
+    conn = db_baglantisi()
+    program = program_getir_veya_olustur(conn, session['kullanici_id'])
+    secilenler = program_dersleri(conn, program["Id"])
+    yonetici = None
+    if session.get('rol') == 'yonetici':
+        yonetici = {t: conn.execute(f"SELECT COUNT(*) FROM {tablo}").fetchone()[0]
+                    for t, tablo in (("ders", "Ders"), ("sube", "Sube"), ("kullanici", "Kullanici"))}
+    conn.close()
+    cakismalar = program_cakismalari([sube_oturum(s) for s in secilenler])
+    cakisan_ids = {c["a"]["SubeId"] for c in cakismalar} | {c["b"]["SubeId"] for c in cakismalar}
+    return sayfa(PANEL, baslik="Panel", aktif="panel", program=program,
+                 ders_sayisi=len(secilenler), akts=sum(s["AKTS"] for s in secilenler),
+                 akts_sinir=AKTS_UST_SINIR, cakisma_sayisi=len(cakismalar), yonetici=yonetici,
+                 iz=haftalik_izgara(secilenler, cakisan_ids))
 
 
 # 5. Yöneticiye Özel Korunan Sayfa (Yetkisizler giremez)
 @app.route('/admin-paneli')
 @yonetici_gerekli
 def admin_paneli():
-    return """
-    <h2>Yönetici Paneli (Yalnızca Yönetici Rolü Erişebilir)</h2>
-    <p>Tebrikler! Rol tabanlı erişim kontrolü başarıyla çalışıyor.</p>
-    <a href="/panel">Geri Dön</a> | <a href="/cikis">Çıkış Yap</a>
-    """
+    return mesaj_sayfasi("✅", "Yönetici sayfası",
+                         "Rol tabanlı erişim kontrolü çalışıyor: bu sayfayı yalnızca yönetici rolü görebilir.", 200)
 
 
 # 6. Çıkış Yap (Logout)
@@ -307,12 +300,39 @@ def program_dersleri(conn, program_id):
     ).fetchall()
 
 
-def haftalik_tablo(dersler, cakisan_ids):
-    """Gün bazında, başlangıç saatine göre sıralı ders listesi."""
-    tablo = {g: [] for g in GUNLER[:5]}
-    for d in sorted(dersler, key=lambda d: dakikaya_cevir(d["Saat"])):
-        tablo.setdefault(d["Gun"], []).append({**dict(d), "cakisan": d["SubeId"] in cakisan_ids})
-    return tablo
+def haftalik_izgara(dersler, cakisan_ids):
+    """Dersleri haftalık zaman ızgarasına yerleştirir (30 dakikalık satırlar).
+    Aynı günde çakışan dersler yan yana gösterilir."""
+    gunler = GUNLER[:5]
+    if any(d["Gun"] in GUNLER[5:] for d in dersler):
+        gunler = GUNLER[:7]
+    bas = min([8 * 60] + [dakikaya_cevir(d["Saat"]) // 60 * 60 for d in dersler])
+    bit = max([17 * 60] + [-(-dakikaya_cevir(d["BitisSaati"]) // 60) * 60 for d in dersler])
+    satir = lambda dk: (dk - bas) // 30 + 2          # 1. satır gün başlıkları
+    # Çakışan dersler yan yana şeritlere (lane) yerleştirilir: her ders, kendisiyle örtüşen
+    # önceki derslerin kullanmadığı ilk şeride girer; grup içindeki şerit sayısı genişliği belirler.
+    bloklar = []
+    for gun in gunler:
+        gunun = sorted((d for d in dersler if d["Gun"] == gun), key=lambda d: dakikaya_cevir(d["Saat"]))
+        grup, grup_bitis = [], -1
+        for d in gunun + [None]:
+            b1 = dakikaya_cevir(d["Saat"]) if d else None
+            if d is None or b1 >= grup_bitis:          # yeni çakışma grubu başlıyor
+                for b in grup:
+                    b["serit_sayisi"] = max(x["serit"] for x in grup) + 1
+                bloklar += grup
+                grup, grup_bitis = [], -1
+                if d is None:
+                    break
+            b2 = dakikaya_cevir(d["BitisSaati"])
+            dolu = {x["serit"] for x in grup if x["_b2"] > b1}
+            serit = next(i for i in range(len(grup) + 1) if i not in dolu)
+            grup.append({**dict(d), "_b1": b1, "_b2": b2, "serit": serit,
+                         "sutun": gunler.index(gun) + 2, "satir": satir(b1),
+                         "uzunluk": max(1, (b2 - b1) // 30), "cakisan": d["SubeId"] in cakisan_ids})
+            grup_bitis = max(grup_bitis, b2)
+    saatler = [{"etiket": f"{dk // 60:02d}:00", "satir": satir(dk)} for dk in range(bas, bit, 60)]
+    return {"gunler": gunler, "saatler": saatler, "bloklar": bloklar, "satir": (bit - bas) // 30}
 
 
 @app.route('/dersler')
@@ -341,61 +361,9 @@ def dersler():
 
     toplam_akts = sum(s["AKTS"] for s in secilenler)
 
-    return sayfa("""
-    <h2>Ders Kataloğu ve Program Oluşturucu <small>(Hafta 6 + Hafta 7)</small></h2>
-    <p>Dönem: <b>{{ program.Donem }}</b> · Toplam AKTS: <b>{{ toplam_akts }}</b> / {{ akts_sinir }}
-       · Durum: {% if program.Kaydedildi %}<span class="etiket">✔ Kaydedildi</span>{% else %}<span class="etiket">Taslak</span>{% endif %}</p>
-
-    {% if cakismalar %}
-      <div class="hata"><b>⚠ Programınızda {{ cakismalar|length }} çakışma var:</b>
-      <ul>{% for c in cakismalar %}
-        <li>{{ c.a.DersKodu }} ({{ c.a.Gun }} {{ c.a.Baslangic }}-{{ c.a.Bitis }}) ↔
-            {{ c.b.DersKodu }} ({{ c.b.Baslangic }}-{{ c.b.Bitis }})
-            — <b>{{ c.tur_aciklama }}</b>, ortak aralık {{ c.ortak_aralik }} ({{ c.dakika }} dk)</li>
-      {% endfor %}</ul></div>
-    {% endif %}
-
-    <h3>Haftalık Programım</h3>
-    <table><tr>{% for g in tablo %}<th>{{ g }}</th>{% endfor %}</tr>
-      <tr>{% for g, liste in tablo.items() %}<td class="gun-hucre">
-        {% for d in liste %}<div class="{{ 'cakisan' if d.cakisan }}"><b>{{ d.Saat }}-{{ d.BitisSaati }}</b><br>{{ d.DersKodu }}</div>{% endfor %}
-      </td>{% endfor %}</tr></table>
-
-    <table>
-      <tr><th>Ders</th><th>Öğretim Elemanı</th><th>Gün / Saat</th><th>AKTS</th><th>İşlem</th></tr>
-      {% for p in secilenler %}
-      <tr class="{{ 'cakisan' if p.SubeId in cakisan_ids }}">
-        <td>{{ p.DersKodu }} - {{ p.DersAdi }}</td><td>{{ p.HocaAdi }}</td>
-        <td>{{ p.Gun }} {{ p.Saat }}-{{ p.BitisSaati }}</td><td>{{ p.AKTS }}</td>
-        <td><form class="satir" method="post" action="/program/sil/{{ p.KayitId }}"><button>Kaldır</button></form></td>
-      </tr>
-      {% else %}<tr><td colspan="5">Henüz programa ders eklenmedi.</td></tr>{% endfor %}
-    </table>
-
-    <form class="satir" method="post" action="/program/kaydet"><button>💾 Programı Kaydet</button></form>
-    {% if program.Kaydedildi and program.PaylasimKodu %}
-      · Paylaşım bağlantısı: <a href="/paylas/{{ program.PaylasimKodu }}">{{ request.host_url }}paylas/{{ program.PaylasimKodu }}</a>
-    {% endif %}
-
-    <hr><h3>Açık Dersler Kataloğu</h3>
-    <table>
-      <tr><th>Kod</th><th>Ders Adı</th><th>Öğretim Elemanı</th><th>Gün / Saat</th><th>AKTS</th><th>Durum</th></tr>
-      {% for k in katalog %}
-      <tr>
-        <td>{{ k.DersKodu }}</td><td>{{ k.DersAdi }}</td><td>{{ k.HocaAdi }}</td>
-        <td>{{ k.Gun }} {{ k.Saat }}-{{ k.BitisSaati }}</td><td>{{ k.AKTS }}</td>
-        <td>
-          {% if k.secili %}✔ Programda
-          {% elif k.ders_secili %}<span style="color:#888">Bu dersin başka şubesi seçili</span>
-          {% else %}
-            {% if k.cakisma %}<span style="color:#d93025">⚠ {{ k.cakisma[0].b.DersKodu }} ile çakışır</span><br>{% endif %}
-            <form class="satir" method="post" action="/program/ekle/{{ k.SubeId }}"><button>+ Programa Ekle</button></form>
-          {% endif %}
-        </td>
-      </tr>{% endfor %}
-    </table>
-    """, baslik="Ders Kataloğu", program=program, secilenler=secilenler, katalog=katalog_satirlari,
-         cakismalar=cakismalar, cakisan_ids=cakisan_ids, tablo=haftalik_tablo(secilenler, cakisan_ids),
+    return sayfa(DERSLER, baslik="Ders Programım", aktif="dersler", program=program, secilenler=secilenler,
+         katalog=katalog_satirlari, cakismalar=cakismalar, cakisan_ids=cakisan_ids,
+         iz=haftalik_izgara(secilenler, cakisan_ids),
          toplam_akts=toplam_akts, akts_sinir=AKTS_UST_SINIR)
 
 
@@ -431,19 +399,7 @@ def program_ekle(sube_id):
     cakismalar = yeni_oturum_cakismalari(sube_oturum(yeni), [sube_oturum(s) for s in secilenler])
     if cakismalar and not zorla:
         conn.close()
-        return sayfa("""
-        <div class="uyari"><h3>⚠ Çakışma Uyarısı</h3>
-        <p><b>{{ y.DersKodu }} - {{ y.DersAdi }}</b> ({{ y.Gun }} {{ y.Saat }}-{{ y.BitisSaati }})
-           programınızdaki şu derslerle çakışıyor:</p>
-        <ul>{% for c in cakismalar %}
-          <li>{{ c.b.DersKodu }} - {{ c.b.DersAdi }} ({{ c.b.Baslangic }}-{{ c.b.Bitis }}):
-              <b>{{ c.tur_aciklama }}</b>, {{ c.ortak_aralik }} arası, {{ c.dakika }} dakika</li>
-        {% endfor %}</ul>
-        <p>Çakışan dersle programınız <b>kaydedilemez</b>. Yine de taslağa eklemek istiyor musunuz?</p>
-        <form class="satir" method="post"><input type="hidden" name="zorla" value="1">
-          <button>Yine de ekle</button></form>
-        <a href="/dersler">Vazgeç</a></div>
-        """, baslik="Çakışma Uyarısı", y=yeni, cakismalar=cakismalar)
+        return sayfa(CAKISMA_UYARISI, baslik="Çakışma Uyarısı", aktif="dersler", y=yeni, cakismalar=cakismalar)
 
     try:
         conn.execute("INSERT INTO ProgramDersleri (ProgramId, SubeId) VALUES (?, ?)", (program["Id"], sube_id))
@@ -513,15 +469,8 @@ def program_paylas(kod):
         abort(404)
     secilenler = program_dersleri(conn, program["Id"])
     conn.close()
-    return sayfa("""
-    <h2>Paylaşılan Ders Programı — {{ program.Donem }}</h2>
-    <table><tr>{% for g in tablo %}<th>{{ g }}</th>{% endfor %}</tr>
-      <tr>{% for g, liste in tablo.items() %}<td class="gun-hucre">
-        {% for d in liste %}<div><b>{{ d.Saat }}-{{ d.BitisSaati }}</b><br>{{ d.DersKodu }} {{ d.DersAdi }}<br><small>{{ d.HocaAdi }}</small></div>{% endfor %}
-      </td>{% endfor %}</tr></table>
-    <p>Toplam AKTS: <b>{{ akts }}</b></p>
-    """, baslik="Paylaşılan Program", program=program, tablo=haftalik_tablo(secilenler, set()),
-         akts=sum(s["AKTS"] for s in secilenler))
+    return sayfa(PAYLAS, baslik="Paylaşılan Program", program=program, dersler=secilenler,
+         iz=haftalik_izgara(secilenler, set()), akts=sum(s["AKTS"] for s in secilenler))
 
 
 # ---------------- Katalog yönetimi (yönetici) ----------------
@@ -608,33 +557,7 @@ def katalog_yonetimi():
     dersler_ = conn.execute("SELECT * FROM Ders ORDER BY DersKodu").fetchall()
     subeler = conn.execute(SUBE_SORGUSU + " ORDER BY Ders.DersKodu").fetchall()
     conn.close()
-    return sayfa("""
-    <h2>Katalog Yönetimi (Yönetici)</h2>
-    <h3>Ders Ekle</h3>
-    <form method="post"><input type="hidden" name="islem" value="ders_ekle">
-      <input name="kod" placeholder="BIL201" required> <input name="ad" placeholder="Ders adı" required>
-      <input name="kredi" type="number" placeholder="Kredi" required> <input name="akts" type="number" placeholder="AKTS" required>
-      <button>Ekle</button></form>
-
-    <h3>Şube Ekle</h3>
-    <form method="post"><input type="hidden" name="islem" value="sube_ekle">
-      <select name="ders_id">{% for d in dersler %}<option value="{{ d.Id }}">{{ d.DersKodu }} - {{ d.DersAdi }}</option>{% endfor %}</select>
-      <input name="hoca" placeholder="Öğretim elemanı" required>
-      <select name="gun">{% for g in gunler %}<option>{{ g }}</option>{% endfor %}</select>
-      <input name="bas" type="time" required> – <input name="bit" type="time" required>
-      <button>Ekle</button></form>
-
-    <h3>Dersler</h3>
-    <table><tr><th>Kod</th><th>Ad</th><th>Kredi</th><th>AKTS</th><th></th></tr>
-    {% for d in dersler %}<tr><td>{{ d.DersKodu }}</td><td>{{ d.DersAdi }}</td><td>{{ d.Kredi }}</td><td>{{ d.AKTS }}</td>
-      <td><form class="satir" method="post"><input type="hidden" name="islem" value="ders_sil"><input type="hidden" name="id" value="{{ d.Id }}"><button>Sil</button></form></td></tr>{% endfor %}
-    </table>
-    <h3>Şubeler</h3>
-    <table><tr><th>Ders</th><th>Öğretim Elemanı</th><th>Gün / Saat</th><th></th></tr>
-    {% for s in subeler %}<tr><td>{{ s.DersKodu }}</td><td>{{ s.HocaAdi }}</td><td>{{ s.Gun }} {{ s.Saat }}-{{ s.BitisSaati }}</td>
-      <td><form class="satir" method="post"><input type="hidden" name="islem" value="sube_sil"><input type="hidden" name="id" value="{{ s.SubeId }}"><button>Sil</button></form></td></tr>{% endfor %}
-    </table>
-    """, baslik="Katalog Yönetimi", dersler=dersler_, subeler=subeler, gunler=GUNLER)
+    return sayfa(KATALOG_YONETIMI, baslik="Katalog Yönetimi", aktif="katalog", dersler=dersler_, subeler=subeler, gunler=GUNLER)
 
 
 if __name__ == "__main__":
