@@ -64,3 +64,29 @@ Programın tamamı için oturumlar (gün, başlangıç) sırasına dizilir; her 
 **Testler:** `python -m unittest discover tests`
 
 **Çalıştırma:** `python init_db.py` (isteğe bağlı) → `python backend/app.py`. Eski veritabanı açılışta otomatik güncellenir (`backend/sema.py`), veriler silinmez.
+
+## Hafta 7 (devam): Canlı Dağıtım (Cloud Deployment)
+**Platform:** Render (ücretsiz plan). Canlı adres: _buraya Render linki yazılacak_
+
+| Dosya | Görevi |
+|---|---|
+| `requirements.txt` | Bulutta kurulacak paketler (Flask, Werkzeug, gunicorn) — sürümler sabitlendi |
+| `Procfile` | Başlatma komutu: `gunicorn --chdir backend app:app --bind 0.0.0.0:$PORT` |
+| `render.yaml` | Render servis tanımı (build/start komutu, sağlık kontrolü, ortam değişkenleri) |
+| `.python-version` | Python sürümü (3.12) |
+
+**Ortam değişkenleri:**
+| Değişken | Açıklama |
+|---|---|
+| `PORT` | Platform verir; uygulama bu portu dinler (sabit 5000 kullanmak canlıda uygulamanın açılmamasına yol açar) |
+| `GIZLI_ANAHTAR` | Oturum çerezlerini imzalar; koda yazılmaz, Render rastgele üretir |
+| `CANLI_ORTAM=1` | Debug kapalı, çerez yalnızca HTTPS (`Secure`), vekil sunucu başlıkları (`ProxyFix`) etkin |
+| `VERITABANI_YOLU` | (İsteğe bağlı) SQLite dosyasının yolu. Dosya yoksa tablolar ve örnek veriler otomatik oluşturulur |
+
+**Neden gunicorn?** `app.run()` yalnızca geliştirme sunucusudur; tek istekte takılabilir ve güvenli değildir. Canlıda üretim WSGI sunucusu gunicorn kullanılır. SQLite tek dosya olduğu için 1 işçi (worker) + 4 iş parçacığı (thread) seçildi; böylece şema güncellemesi aynı anda iki süreçte çalışmaz.
+
+**Veritabanı:** Uygulama açılışta `sema.py` ile şemayı günceller. Render'ın ücretsiz planında disk kalıcı değildir: her yeniden dağıtımda veritabanı depodaki `database/proje.db` hâline döner (test hesapları ve örnek dersler korunur, sonradan eklenen kayıtlar silinir). Kalıcı veri gerekirse ücretli disk veya PostgreSQL kullanılmalıdır.
+
+**Sağlık kontrolü:** `/saglik` → `{"durum": "ok", "ders_sayisi": N}`
+
+**Test hesapları (canlıda da geçerli):** Öğrenci `ogrenci / 123456` · Yönetici `admin / admin123`

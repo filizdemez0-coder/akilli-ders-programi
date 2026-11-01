@@ -1,0 +1,16 @@
+# Render "Blueprint" dosyası: Render bu dosyayı okuyup servisi otomatik kurar.
+services:
+  - type: web
+    name: akilli-ders-programi
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --chdir backend app:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 60
+    healthCheckPath: /saglik
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: CANLI_ORTAM
+        value: "1"
+      - key: GIZLI_ANAHTAR
+        generateValue: true     # Render rastgele, güçlü bir anahtar üretir

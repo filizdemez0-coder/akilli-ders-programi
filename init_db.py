@@ -6,9 +6,14 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "backend"))
 from sema import sema_guncelle, ornek_veri_ekle
 
-def veritabanini_kur():
-    # SQLite veritabanı dosyasını database klasöründe açar
-    baglanti = sqlite3.connect(os.path.join(os.path.dirname(os.path.abspath(__file__)), "database", "proje.db"))
+VARSAYILAN_YOL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "database", "proje.db")
+
+
+def veritabanini_kur(yol=None):
+    # Yol verilmezse: VERITABANI_YOLU ortam değişkeni, o da yoksa database/proje.db
+    yol = yol or os.environ.get("VERITABANI_YOLU") or VARSAYILAN_YOL
+    os.makedirs(os.path.dirname(os.path.abspath(yol)), exist_ok=True)
+    baglanti = sqlite3.connect(yol)
     imlec = baglanti.cursor()
 
     # 1. Ogrenci Tablosu

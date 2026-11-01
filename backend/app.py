@@ -4,25 +4,47 @@ import sqlite3
 import functools
 import os
 import secrets
+import sys
 from datetime import timedelta
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from sema import sema_guncelle, ornek_veri_ekle
 from cakisma import (GUNLER, zaman_araligi_dogrula, yeni_oturum_cakismalari,
                      program_cakismalari, dakikaya_cevir)
 
+# -------------------------------------------------------------
+# ORTAM DEĞİŞKENLERİ (Hafta 7 - Canlı Dağıtım)
+#   GIZLI_ANAHTAR    : oturum çerezlerini imzalayan anahtar (bulutta mutlaka tanımlanır)
+#   VERITABANI_YOLU  : SQLite dosyasının yolu (varsayılan: database/proje.db)
+#   CANLI_ORTAM      : "1" ise HTTPS'e özel güvenli çerez ayarları açılır
+#   PORT             : bulut platformunun verdiği port (Render/Railway otomatik tanımlar)
+# Hiçbiri tanımlı değilse uygulama yerelde eskisi gibi çalışır.
+# -------------------------------------------------------------
+CANLI_ORTAM = os.environ.get("CANLI_ORTAM") == "1"
+
 app = Flask(__name__)
-# Gizli anahtar ortam değişkeninden okunur; tanımlı değilse geliştirme için varsayılan kullanılır
 app.secret_key = os.environ.get("GIZLI_ANAHTAR", "akillidersprogrami_gizli_anahtar")
 # Oturum yönetimi (Hafta 5): 30 dk sonra oturum düşer, çerez JavaScript ile okunamaz
 app.config.update(
     PERMANENT_SESSION_LIFETIME=timedelta(minutes=30),
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=CANLI_ORTAM,   # canlıda çerez yalnızca HTTPS ile gönderilir
 )
+# Bulut platformları uygulamanın önüne bir vekil sunucu (proxy) koyar; gerçek https adresini
+# ve istemci IP'sini doğru görmek için X-Forwarded-* başlıklarına güvenilir.
+if CANLI_ORTAM:
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
 # Veritabanı dosyasının tam yolu (uygulama hangi klasörden çalıştırılırsa çalıştırılsın doğru dosyayı bulur)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "..", "database", "proje.db")
+DB_PATH = os.environ.get("VERITABANI_YOLU") or os.path.join(BASE_DIR, "..", "database", "proje.db")
+
+# Veritabanı dosyası yoksa (ör. bulutta boş bir diskte ilk açılış) tabloları ve örnek verileri oluştur
+if not os.path.exists(DB_PATH):
+    sys.path.insert(0, os.path.join(BASE_DIR, ".."))
+    from init_db import veritabanini_kur
+    veritabanini_kur(DB_PATH)
 
 AKTIF_DONEM = "2026-Güz"
 AKTS_UST_SINIR = 30   # İş kuralı: bir dönemde en fazla 30 AKTS alınabilir
@@ -102,6 +124,14 @@ def yonetici_gerekli(f):
             return "<h2>403 - Yetkisiz Erişim!</h2><p>Bu sayfaya yalnızca <b>Yönetici</b> rolündeki kullanıcılar erişebilir.</p><a href='/panel'>Panele Dön</a>", 403
         return f(*args, **kwargs)
     return decorated_function
+
+
+# Sağlık kontrolü: bulut platformu uygulamanın ayakta olduğunu bu adresle anlar
+@app.route('/saglik')
+def saglik():
+    with sqlite3.connect(DB_PATH) as c:
+        ders_sayisi = c.execute("SELECT COUNT(*) FROM Ders").fetchone()[0]
+    return {"durum": "ok", "ders_sayisi": ders_sayisi}
 
 
 # 1. Ana Sayfa
@@ -621,4 +651,6 @@ def katalog_yonetimi():
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    # Yerel geliştirme: python backend/app.py  (canlıda gunicorn kullanılır, bkz. Procfile)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="127.0.0.1" if not CANLI_ORTAM else "0.0.0.0", port=port, debug=not CANLI_ORTAM)

@@ -1,0 +1,5 @@
+# Uygulamanın çalışması için gereken paketler (bulut platformu bunları otomatik kurar)
+Flask==3.1.3
+Werkzeug==3.1.9
+# Üretim (canlı) ortamı için WSGI sunucusu - Flask'ın geliştirme sunucusu canlıda kullanılmaz
+gunicorn==23.0.0
