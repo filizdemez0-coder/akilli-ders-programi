@@ -66,7 +66,7 @@ Programın tamamı için oturumlar (gün, başlangıç) sırasına dizilir; her 
 **Çalıştırma:** `python init_db.py` (isteğe bağlı) → `python backend/app.py`. Eski veritabanı açılışta otomatik güncellenir (`backend/sema.py`), veriler silinmez.
 
 ## Hafta 7 (devam): Canlı Dağıtım (Cloud Deployment)
-**Platform:** Render (ücretsiz plan). Canlı adres: _buraya Render linki yazılacak_
+**Platform:** Render (ücretsiz plan). Canlı adres: **https://akilli-ders-programi.onrender.com**
 
 | Dosya | Görevi |
 |---|---|

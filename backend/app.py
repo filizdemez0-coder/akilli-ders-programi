@@ -9,6 +9,7 @@ from datetime import timedelta
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from sema import sema_guncelle, ornek_veri_ekle
+from sayfalar import KAMU_SABLON, KAMU_SON, ANA_SAYFA, GIRIS_SAYFASI, KAYIT_SAYFASI
 from cakisma import (GUNLER, zaman_araligi_dogrula, yeni_oturum_cakismalari,
                      program_cakismalari, dakikaya_cevir)
 
@@ -139,10 +140,12 @@ def saglik():
 def ana_sayfa():
     if 'kullanici_id' in session:
         return redirect(url_for('panel'))
-    return """
-    <h2>Akıllı Ders Programı ve Seçmeli Ders Öneri Sistemi</h2>
-    <p><a href="/giris">Giriş Yap</a> | <a href="/kayit">Kayıt Ol</a></p>
-    """
+    return kamu_sayfa(ANA_SAYFA, baslik="Ana Sayfa")
+
+
+def kamu_sayfa(govde, **baglam):
+    """Herkese açık sayfaları (ana sayfa, giriş, kayıt) ortak şablonla oluşturur."""
+    return render_template_string(KAMU_SABLON + govde + KAMU_SON, **baglam)
 
 
 # 2. Kayıt Ol (Register) - Şifre Hash'lenerek kaydedilir
@@ -153,6 +156,11 @@ def kayit():
         kadi = request.form['kullanici_adi']
         eposta = request.form['eposta']
         sifre = request.form['parola']
+
+        # Sunucu tarafı doğrulama (tarayıcıdaki kontroller atlanabilir)
+        if len(kadi.strip()) < 3 or len(sifre) < 6 or "@" not in eposta:
+            return kamu_sayfa(KAYIT_SAYFASI, baslik="Kayıt Ol",
+                              mesaj="Kullanıcı adı en az 3, şifre en az 6 karakter olmalı ve geçerli bir e-posta girilmeli.")
 
         parola_hash = generate_password_hash(sifre)
 
@@ -166,17 +174,7 @@ def kayit():
         except sqlite3.IntegrityError:
             mesaj = "Bu kullanıcı adı veya e-posta zaten kayıtlı!"
 
-    return render_template_string("""
-    <h2>Öğrenci Kayıt Ol</h2>
-    {% if mesaj %}<p style="color:red;">{{ mesaj }}</p>{% endif %}
-    <form method="POST">
-        Kullanıcı Adı: <br><input type="text" name="kullanici_adi" required><br><br>
-        E-posta: <br><input type="email" name="eposta" required><br><br>
-        Şifre: <br><input type="password" name="parola" required><br><br>
-        <button type="submit">Kayıt Ol</button>
-    </form>
-    <p>Zaten hesabınız var mı? <a href="/giris">Giriş Yap</a></p>
-    """, mesaj=mesaj)
+    return kamu_sayfa(KAYIT_SAYFASI, baslik="Kayıt Ol", mesaj=mesaj)
 
 
 # 3. Giriş Yap (Login) - Hash doğrulaması ve Session başlatma
@@ -201,18 +199,7 @@ def giris():
         else:
             mesaj = "Hatalı kullanıcı adı veya şifre!"
 
-    return render_template_string("""
-    <h2>Kullanıcı Girişi (Hafta 5)</h2>
-    {% if mesaj %}<p style="color:red;">{{ mesaj }}</p>{% endif %}
-    <form method="POST">
-        Kullanıcı Adı: <br><input type="text" name="kullanici_adi" required><br><br>
-        Şifre: <br><input type="password" name="parola" required><br><br>
-        <button type="submit">Giriş Yap</button>
-    </form>
-    <p>Hesabınız yok mu? <a href="/kayit">Kayıt Ol</a></p>
-    <hr>
-    <small><b>Test Hesapları:</b><br>Yönetici: admin / admin123<br>Öğrenci: ogrenci / 123456</small>
-    """, mesaj=mesaj)
+    return kamu_sayfa(GIRIS_SAYFASI, baslik="Giriş Yap", mesaj=mesaj)
 
 
 # 4. Kullanıcı Paneli (Herkes giriş yapınca görür)
