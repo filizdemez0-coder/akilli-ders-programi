@@ -90,3 +90,10 @@ Programın tamamı için oturumlar (gün, başlangıç) sırasına dizilir; her 
 **Sağlık kontrolü:** `/saglik` → `{"durum": "ok", "ders_sayisi": N}`
 
 **Test hesapları (canlıda da geçerli):** Öğrenci `ogrenci / 123456` · Yönetici `admin / admin123`
+
+## Hafta 8: Vize — Ara Sürüm (v0.8.0)
+- **Sürüm:** `0.8.0`, Git etiketi `v0.8.0` (anlamsal sürümleme; ayrıntılar ve düzeltilen hatalar: `CHANGELOG.md`).
+- **Entegrasyon:** Tüm veritabanı bağlantıları `backend/db_manager.py` üzerinden açılır.
+- **Testler:** `python -m unittest discover tests -v` → 15 test (8 çakışma birim testi + 7 uçtan uca entegrasyon testi). Entegrasyon testleri geçici, boş bir veritabanı kullanır; `proje.db` değişmez.
+- **Güvenlik düzeltmeleri:** 5 hatalı girişte 5 dakika kilit (HTTP 429), kullanıcı adında boşluk temizliği, girişli kullanıcının giriş/kayıt sayfasından panele yönlendirilmesi.
+- **Demo:** `docs/DEMO_SENARYOSU.md` · **Sözlü hazırlık:** `docs/SOZLU_HAZIRLIK.md`

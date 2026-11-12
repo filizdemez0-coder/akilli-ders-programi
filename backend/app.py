@@ -5,10 +5,13 @@ import functools
 import os
 import secrets
 import sys
+import threading
+import time
 from datetime import timedelta
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from sema import sema_guncelle, ornek_veri_ekle
+from db_manager import DB_PATH, baglanti_al
 from sayfalar import (KAMU_SABLON, KAMU_SON, ANA_SAYFA, GIRIS_SAYFASI, KAYIT_SAYFASI,
                       UYGULAMA_SABLON, UYGULAMA_SON, PANEL, DERSLER, CAKISMA_UYARISI, PAYLAS,
                       KATALOG_YONETIMI, MESAJ_SAYFASI)
@@ -25,6 +28,9 @@ from cakisma import (GUNLER, zaman_araligi_dogrula, yeni_oturum_cakismalari,
 # -------------------------------------------------------------
 CANLI_ORTAM = os.environ.get("CANLI_ORTAM") == "1"
 
+# Anlamsal sürümleme (MAJOR.MINOR.PATCH) - Hafta 8: vize ara sürümü
+SURUM = "0.8.0"
+
 app = Flask(__name__)
 app.secret_key = os.environ.get("GIZLI_ANAHTAR", "akillidersprogrami_gizli_anahtar")
 # Oturum yönetimi (Hafta 5): 30 dk sonra oturum düşer, çerez JavaScript ile okunamaz
@@ -39,9 +45,8 @@ app.config.update(
 if CANLI_ORTAM:
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
-# Veritabanı dosyasının tam yolu (uygulama hangi klasörden çalıştırılırsa çalıştırılsın doğru dosyayı bulur)
+# Veritabanı yolu ve bağlantılar veri erişim katmanından (db_manager.py) gelir
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.environ.get("VERITABANI_YOLU") or os.path.join(BASE_DIR, "..", "database", "proje.db")
 
 # Veritabanı dosyası yoksa (ör. bulutta boş bir diskte ilk açılış) tabloları ve örnek verileri oluştur
 if not os.path.exists(DB_PATH):
@@ -52,13 +57,48 @@ if not os.path.exists(DB_PATH):
 AKTIF_DONEM = "2026-Güz"
 AKTS_UST_SINIR = 30   # İş kuralı: bir dönemde en fazla 30 AKTS alınabilir
 
+# Kaba kuvvet (brute force) koruması - Hafta 8 düzeltmesi:
+# aynı kullanıcı adı + IP için 5 dakikada 5 hatalı giriş olursa hesap 5 dakika kilitlenir.
+GIRIS_DENEME_SINIRI = 5
+GIRIS_KILIT_SURESI = 5 * 60
+_basarisiz_girisler = {}
+_giris_kilidi = threading.Lock()
+
+
+def _giris_anahtari(kadi):
+    return f"{kadi.lower()}|{request.remote_addr}"
+
+
+def giris_kilitli_mi(kadi):
+    """Kilitliyse kalan saniyeyi, değilse 0 döndürür."""
+    simdi = time.time()
+    with _giris_kilidi:
+        denemeler = [z for z in _basarisiz_girisler.get(_giris_anahtari(kadi), []) if simdi - z < GIRIS_KILIT_SURESI]
+        _basarisiz_girisler[_giris_anahtari(kadi)] = denemeler
+        if len(denemeler) >= GIRIS_DENEME_SINIRI:
+            return int(GIRIS_KILIT_SURESI - (simdi - denemeler[0])) + 1
+    return 0
+
+
+def basarisiz_giris_kaydet(kadi):
+    with _giris_kilidi:
+        _basarisiz_girisler.setdefault(_giris_anahtari(kadi), []).append(time.time())
+
+
+def basarisiz_girisleri_temizle(kadi):
+    with _giris_kilidi:
+        _basarisiz_girisler.pop(_giris_anahtari(kadi), None)
+
 
 def db_baglantisi():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")   # İlişkisel bütünlük (FK) kontrolleri açık
+    conn = baglanti_al()   # db_manager: tek veritabanı yolu + FK denetimi açık
     g.setdefault("_baglantilar", []).append(conn)
     return conn
+
+
+@app.context_processor
+def surum_bilgisi():
+    return {"surum": SURUM}
 
 
 @app.teardown_appcontext
@@ -69,9 +109,13 @@ def baglantilari_kapat(_hata):
 
 
 # Uygulama açılırken şemayı güncelle (Hafta 6-7 sütunları) ve örnek verileri tamamla
-with sqlite3.connect(DB_PATH) as _c:
+# Not: "with sqlite3.connect(...)" bağlantıyı KAPATMAZ (yalnızca commit eder); bu yüzden açıkça kapatılır.
+_c = baglanti_al()
+try:
     sema_guncelle(_c)
     ornek_veri_ekle(_c)
+finally:
+    _c.close()
 
 
 # ---------------- Ortak sayfa şablonu (arayüz: sayfalar.py) ----------------
@@ -122,9 +166,8 @@ def yonetici_gerekli(f):
 # Sağlık kontrolü: bulut platformu uygulamanın ayakta olduğunu bu adresle anlar
 @app.route('/saglik')
 def saglik():
-    with sqlite3.connect(DB_PATH) as c:
-        ders_sayisi = c.execute("SELECT COUNT(*) FROM Ders").fetchone()[0]
-    return {"durum": "ok", "ders_sayisi": ders_sayisi}
+    ders_sayisi = db_baglantisi().execute("SELECT COUNT(*) FROM Ders").fetchone()[0]
+    return {"durum": "ok", "surum": SURUM, "ders_sayisi": ders_sayisi}
 
 
 # 1. Ana Sayfa
@@ -143,16 +186,19 @@ def kamu_sayfa(govde, **baglam):
 # 2. Kayıt Ol (Register) - Şifre Hash'lenerek kaydedilir
 @app.route('/kayit', methods=['GET', 'POST'])
 def kayit():
+    if 'kullanici_id' in session:
+        return redirect(url_for('panel'))
     mesaj = ""
     if request.method == 'POST':
-        kadi = request.form['kullanici_adi']
-        eposta = request.form['eposta']
+        # Hafta 8 düzeltmesi: baştaki/sondaki boşluklar atılır, e-posta küçük harfe çevrilir
+        kadi = request.form['kullanici_adi'].strip()
+        eposta = request.form['eposta'].strip().lower()
         sifre = request.form['parola']
 
         # Sunucu tarafı doğrulama (tarayıcıdaki kontroller atlanabilir)
-        if len(kadi.strip()) < 3 or len(sifre) < 6 or "@" not in eposta:
+        if len(kadi) < 3 or " " in kadi or len(sifre) < 6 or "@" not in eposta:
             return kamu_sayfa(KAYIT_SAYFASI, baslik="Kayıt Ol",
-                              mesaj="Kullanıcı adı en az 3, şifre en az 6 karakter olmalı ve geçerli bir e-posta girilmeli.")
+                              mesaj="Kullanıcı adı boşluksuz ve en az 3, şifre en az 6 karakter olmalı ve geçerli bir e-posta girilmeli.")
 
         parola_hash = generate_password_hash(sifre)
 
@@ -172,16 +218,24 @@ def kayit():
 # 3. Giriş Yap (Login) - Hash doğrulaması ve Session başlatma
 @app.route('/giris', methods=['GET', 'POST'])
 def giris():
+    if 'kullanici_id' in session:
+        return redirect(url_for('panel'))
     mesaj = ""
     if request.method == 'POST':
-        kadi = request.form['kullanici_adi']
+        kadi = request.form['kullanici_adi'].strip()
         sifre = request.form['parola']
+
+        kalan = giris_kilitli_mi(kadi)
+        if kalan:
+            return kamu_sayfa(GIRIS_SAYFASI, baslik="Giriş Yap",
+                              mesaj=f"Çok fazla hatalı deneme yapıldı. Lütfen {kalan // 60 + 1} dakika sonra tekrar deneyin."), 429
 
         conn = db_baglantisi()
         kullanici = conn.execute("SELECT * FROM Kullanici WHERE KullaniciAdi = ?", (kadi,)).fetchone()
         conn.close()
 
         if kullanici and check_password_hash(kullanici['ParolaHash'], sifre):
+            basarisiz_girisleri_temizle(kadi)
             session.clear()              # oturum sabitleme (session fixation) saldırısına karşı
             session.permanent = True     # PERMANENT_SESSION_LIFETIME geçerli olsun
             session['kullanici_id'] = kullanici['Id']
@@ -189,6 +243,8 @@ def giris():
             session['rol'] = kullanici['Rol']
             return redirect(url_for('panel'))
         else:
+            basarisiz_giris_kaydet(kadi)
+            # Hangi alanın yanlış olduğu söylenmez (kullanıcı adı tahminini zorlaştırır)
             mesaj = "Hatalı kullanıcı adı veya şifre!"
 
     return kamu_sayfa(GIRIS_SAYFASI, baslik="Giriş Yap", mesaj=mesaj)

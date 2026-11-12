@@ -172,7 +172,7 @@ ANA_SAYFA = """
 
 <footer>
   <span>Bilgisayar Uygulamaları I · Proje P18 — Akıllı Ders Programı ve Seçmeli Ders Öneri Sistemi</span>
-  <span>Flask · SQLite · Render</span>
+  <span>Flask · SQLite · Render · sürüm {{ surum }}</span>
 </footer>
 """
 
@@ -374,7 +374,10 @@ input:focus,select:focus{outline:none;border-color:var(--vurgu);box-shadow:0 0 0
 {% endwith %}
 """
 
-UYGULAMA_SON = "</main></body></html>"
+UYGULAMA_SON = """<footer style="max-width:1160px;margin:0 auto;padding:0 20px 30px;color:var(--soluk);font-size:12px">
+  Akıllı Ders Programı · sürüm {{ surum }}</footer></body></html>"""
+# (main etiketi footer'dan önce kapanır)
+UYGULAMA_SON = "</main>" + UYGULAMA_SON
 
 
 # Haftalık ızgara: app.py'deki haftalik_izgara() fonksiyonunun çıktısını çizer
@@ -407,7 +410,7 @@ PANEL = """
 <div class="istatistik">
   <div><small>Seçilen ders</small><b>{{ ders_sayisi }}</b></div>
   <div><small>Toplam AKTS</small><b>{{ akts }} <span>/ {{ akts_sinir }}</span></b>
-    <div class="cubuk"><i style="width:{{ (akts * 100 / akts_sinir)|round|int }}%"></i></div></div>
+    <div class="cubuk"><i style="width:{{ [akts * 100 / akts_sinir, 100]|min|round|int }}%"></i></div></div>
   <div><small>Çakışma</small><b style="color:{{ 'var(--uyari)' if cakisma_sayisi else 'var(--yesil)' }}">{{ cakisma_sayisi }}</b></div>
   <div><small>Program durumu</small><b style="font-size:18px;margin-top:10px">
     {% if program.Kaydedildi %}<span class="rozet yesil">✓ Kaydedildi</span>{% else %}<span class="rozet sari">Taslak</span>{% endif %}</b></div>
