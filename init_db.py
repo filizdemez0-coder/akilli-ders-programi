@@ -1,10 +1,9 @@
 from werkzeug.security import generate_password_hash
 import sqlite3
 import os
-import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "backend"))
-from sema import sema_guncelle, ornek_veri_ekle
+# sema.py backend klasöründe; proje kökünden "backend.sema" olarak içe aktarılır
+from backend.sema import sema_guncelle, ornek_veri_ekle
 
 VARSAYILAN_YOL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "database", "proje.db")
 
