@@ -21,3 +21,19 @@
 
 **Kapanış cümlesi:** "Kullanıcı yönetimi, veritabanı, ders kataloğu, program oluşturucu ve çakışma tespiti uçtan uca
 birlikte çalışıyor; bu durum `v0.8.0` etiketiyle işaretlendi. Sonraki aşama Hafta 9: programı takvim servisine aktarma."
+
+---
+
+# Ek: Hafta 9–10 demo adımları (yaklaşık 3 dakika) · sürüm 0.10.0
+
+| # | Adım | Ne gösterilir / ne söylenir | Modül |
+|---|---|---|---|
+| 1 | Öğrenciyle gir → **Seçmeli Önerisi** → "Veri ve Yapay Zekâ" ile "Web ve Mobil"i işaretle, Veri alanına BA (3.50) ver → **Profili kaydet** | Tercih/başarı verisi | Öneri (H10) |
+| 2 | **✨ Öneri al** | Öneriler, şube, ★ uyum puanı, gerekçe; rozet: "Yapay zekâ önerisi · kodla doğrulandı" (anahtar yoksa "Kural tabanlı") | Öneri (H10) |
+| 3 | Bir öneride **+ Programa ekle** → Ders Programım | Önerilen şube programla çakışmıyor (ön eleme) | Öneri + Çakışma |
+| 4 | `admin` ile **AI Günlüğü** | İstem (JSON), ham yanıt, durum (`basarili` / `kismen_gecersiz` / `anahtar_yok`) | Şeffaflık (H10) |
+| 5 | Öğrenciyle **Takvim** → **.ics dosyasını indir** → Google Takvim'de içe aktar | Dersler dönem boyunca haftalık tekrar ediyor | Takvim (H9) |
+| 6 | Takvim sayfasındaki **Resmî tatiller** kartı | 29 Ekim gibi tatiller; derse denk gelenler takvimden çıkarıldı. API çalışmazsa sarı uyarı ve takvim yine iniyor | Harici API (H9) |
+
+> Canlıda AI ve tatil API'si için Render → Environment'a `ANTHROPIC_API_KEY` ve `TATIL_API_ANAHTARI` girilmeli.
+> Anahtarsız demo da çalışır: bu durumda hata yönetimi (yedek yol) gösterilmiş olur.

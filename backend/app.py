@@ -1,4 +1,4 @@
-from flask import Flask, request, redirect, url_for, session, render_template_string, abort, flash, g
+from flask import Flask, request, redirect, url_for, session, render_template_string, abort, flash, g, Response
 from werkzeug.security import generate_password_hash, check_password_hash
 import sqlite3
 import functools
@@ -10,13 +10,15 @@ import time
 from datetime import timedelta
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-from sema import sema_guncelle, ornek_veri_ekle
+from sema import sema_guncelle, ornek_veri_ekle, ALANLAR
 from db_manager import DB_PATH, baglanti_al
 from sayfalar import (KAMU_SABLON, KAMU_SON, ANA_SAYFA, GIRIS_SAYFASI, KAYIT_SAYFASI,
                       UYGULAMA_SABLON, UYGULAMA_SON, PANEL, DERSLER, CAKISMA_UYARISI, PAYLAS,
-                      KATALOG_YONETIMI, MESAJ_SAYFASI)
+                      KATALOG_YONETIMI, MESAJ_SAYFASI, TAKVIM, ONERI, AI_GUNLUGU)
 from cakisma import (GUNLER, zaman_araligi_dogrula, yeni_oturum_cakismalari,
                      program_cakismalari, dakikaya_cevir)
+import takvim
+import oneri
 
 # -------------------------------------------------------------
 # ORTAM DEĞİŞKENLERİ (Hafta 7 - Canlı Dağıtım)
@@ -24,15 +26,21 @@ from cakisma import (GUNLER, zaman_araligi_dogrula, yeni_oturum_cakismalari,
 #   VERITABANI_YOLU  : SQLite dosyasının yolu (varsayılan: database/proje.db)
 #   CANLI_ORTAM      : "1" ise HTTPS'e özel güvenli çerez ayarları açılır
 #   PORT             : bulut platformunun verdiği port (Render/Railway otomatik tanımlar)
+#   TATIL_API_ANAHTARI : (Hafta 9) Calendarific resmî tatil API anahtarı - isteğe bağlı
+#   ANTHROPIC_API_KEY  : (Hafta 10) Claude API anahtarı - isteğe bağlı; yoksa kural tabanlı öneri
 # Hiçbiri tanımlı değilse uygulama yerelde eskisi gibi çalışır.
 # -------------------------------------------------------------
 CANLI_ORTAM = os.environ.get("CANLI_ORTAM") == "1"
 
 # Anlamsal sürümleme (MAJOR.MINOR.PATCH) - Hafta 8: vize ara sürümü
-SURUM = "0.8.0"
+SURUM = "0.10.0"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("GIZLI_ANAHTAR", "akillidersprogrami_gizli_anahtar")
+# Hafta 10 düzeltmesi: canlıda anahtar unutulursa depodaki herkesin bildiği anahtarla açılmak yerine
+# uygulama hiç açılmaz (aksi hâlde oturum çerezi taklit edilip yönetici olunabilirdi).
+if CANLI_ORTAM and not os.environ.get("GIZLI_ANAHTAR"):
+    raise RuntimeError("CANLI_ORTAM=1 iken GIZLI_ANAHTAR ortam değişkeni tanımlanmalıdır.")
 # Oturum yönetimi (Hafta 5): 30 dk sonra oturum düşer, çerez JavaScript ile okunamaz
 app.config.update(
     PERMANENT_SESSION_LIFETIME=timedelta(minutes=30),
@@ -318,7 +326,7 @@ def sube_oturum(satir):
 
 SUBE_SORGUSU = """
     SELECT Sube.Id AS SubeId, Sube.DersId, Ders.DersKodu, Ders.DersAdi, Ders.Kredi, Ders.AKTS,
-           Sube.HocaAdi, Sube.Gun, Sube.Saat, Sube.BitisSaati
+           Ders.Secmeli, Ders.Alan, Sube.HocaAdi, Sube.Gun, Sube.Saat, Sube.BitisSaati
     FROM Sube JOIN Ders ON Sube.DersId = Ders.Id
 """
 
@@ -541,6 +549,10 @@ def katalog_yonetimi():
         if islem == 'ders_ekle':
             kod = request.form.get('kod', '').strip().upper()
             ad = request.form.get('ad', '').strip()
+            secmeli = 1 if request.form.get('secmeli') else 0
+            alan = request.form.get('alan') or None
+            if alan is not None and alan not in ALANLAR:
+                hatalar.append("Geçersiz ilgi alanı.")
             try:
                 kredi, akts = int(request.form.get('kredi', '')), int(request.form.get('akts', ''))
             except ValueError:
@@ -554,8 +566,8 @@ def katalog_yonetimi():
                 hatalar.append("Kredi 1-10, AKTS 1-15 arasında olmalı.")
             if not hatalar:
                 try:
-                    conn.execute("INSERT INTO Ders (DersKodu, DersAdi, Kredi, AKTS) VALUES (?, ?, ?, ?)",
-                                 (kod, ad, kredi, akts))
+                    conn.execute("INSERT INTO Ders (DersKodu, DersAdi, Kredi, AKTS, Secmeli, Alan) VALUES (?, ?, ?, ?, ?, ?)",
+                                 (kod, ad, kredi, akts, secmeli, alan))
                     conn.commit()
                     flash(f"{kod} eklendi.", "basari")
                 except sqlite3.IntegrityError:
@@ -613,7 +625,149 @@ def katalog_yonetimi():
     dersler_ = conn.execute("SELECT * FROM Ders ORDER BY DersKodu").fetchall()
     subeler = conn.execute(SUBE_SORGUSU + " ORDER BY Ders.DersKodu").fetchall()
     conn.close()
-    return sayfa(KATALOG_YONETIMI, baslik="Katalog Yönetimi", aktif="katalog", dersler=dersler_, subeler=subeler, gunler=GUNLER)
+    return sayfa(KATALOG_YONETIMI, baslik="Katalog Yönetimi", aktif="katalog", dersler=dersler_, subeler=subeler,
+                 gunler=GUNLER, alanlar=ALANLAR)
+
+
+# =============================================================
+# HAFTA 9: Harici API Entegrasyonu - Takvim (ayrıntılar: takvim.py)
+# =============================================================
+@app.route('/takvim')
+@giris_gerekli
+def takvim_sayfasi():
+    conn = db_baglantisi()
+    program = program_getir_veya_olustur(conn, session['kullanici_id'])
+    secilenler = program_dersleri(conn, program["Id"])
+    tatiller, tatil_hatasi = takvim.donem_tatilleri()
+    cakisma_var = bool(program_cakismalari([sube_oturum(s) for s in secilenler]))
+    return sayfa(TAKVIM, baslik="Takvim", aktif="takvim", program=program, secilenler=secilenler,
+                 cakisma_var=cakisma_var, tatiller=takvim.derse_denk_gelen_tatiller(secilenler, tatiller),
+                 tatil_hatasi=tatil_hatasi, bas=takvim.DONEM_BASLANGIC, bit=takvim.DONEM_BITIS)
+
+
+def _ics_yaniti(secilenler, program, indir):
+    tatiller, _hata = takvim.donem_tatilleri()   # API çalışmazsa tatiller boş gelir, takvim yine oluşur
+    icerik = takvim.ics_olustur(secilenler, f"{program['Donem']} Ders Programı", tatiller,
+                                uid_on_ek=f"program{program['Id']}")
+    yanit = Response(icerik, mimetype="text/calendar")
+    yanit.headers["Content-Type"] = "text/calendar; charset=utf-8"
+    if indir:
+        yanit.headers["Content-Disposition"] = 'attachment; filename="ders-programi.ics"'
+    return yanit
+
+
+@app.route('/takvim/program.ics')
+@giris_gerekli
+def takvim_indir():
+    conn = db_baglantisi()
+    program = program_getir_veya_olustur(conn, session['kullanici_id'])
+    secilenler = program_dersleri(conn, program["Id"])
+    if not secilenler:
+        flash("Takvime aktarmak için önce programınıza ders ekleyin.", "hata")
+        return redirect(url_for('takvim_sayfasi'))
+    if program_cakismalari([sube_oturum(s) for s in secilenler]):
+        flash("Programda çakışma varken takvime aktarılamaz.", "hata")
+        return redirect(url_for('takvim_sayfasi'))
+    return _ics_yaniti(secilenler, program, indir=True)
+
+
+@app.route('/paylas/<kod>/takvim.ics')
+def takvim_abonelik(kod):
+    """Takvim servisinin (Google/Outlook) 'URL ile ekle' özelliği bu adresi düzenli olarak okur."""
+    conn = db_baglantisi()
+    program = conn.execute("SELECT * FROM Program WHERE PaylasimKodu = ? AND Kaydedildi = 1", (kod,)).fetchone()
+    if not program:
+        abort(404)
+    return _ics_yaniti(program_dersleri(conn, program["Id"]), program, indir=False)
+
+
+# =============================================================
+# HAFTA 10: Yapay Zekâ Bileşeni - Seçmeli Ders Önerisi (ayrıntılar: oneri.py)
+# =============================================================
+ONERI_BEKLEME_SURESI = 15          # saniye: aynı öğrenci art arda AI isteği gönderemez (maliyet / rate limit)
+_son_oneri_zamani = {}
+
+NOT_SECENEKLERI = [("4.0", "AA (4.00)"), ("3.5", "BA (3.50)"), ("3.0", "BB (3.00)"), ("2.5", "CB (2.50)"),
+                   ("2.0", "CC (2.00)"), ("1.5", "DC (1.50)"), ("1.0", "DD (1.00)"), ("0.0", "FF (0.00)")]
+
+
+def ogrenci_profili(conn, ogrenci_id):
+    satir = conn.execute("SELECT IlgiAlanlari FROM Ogrenci WHERE Id = ?", (ogrenci_id,)).fetchone()
+    ilgiler = [a for a in (satir["IlgiAlanlari"] or "").split(",") if a in ALANLAR]
+    basari = {r["Alan"]: r["Ortalama"] for r in conn.execute(
+        "SELECT Alan, Ortalama FROM AlanBasarisi WHERE OgrenciId = ?", (ogrenci_id,))}
+    return {"ilgi_alanlari": ilgiler, "basari": basari}
+
+
+def ai_gunlugune_yaz(kullanici_id, istem, yanit, durum, aciklama, model):
+    conn = baglanti_al()   # öneri sonucundan bağımsız, kendi bağlantısıyla kaydedilir
+    try:
+        conn.execute("INSERT INTO AiGunlugu (KullaniciId, Model, Istem, Yanit, Durum, Aciklama) VALUES (?, ?, ?, ?, ?, ?)",
+                     (kullanici_id, model, istem, yanit, durum, aciklama))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+@app.route('/oneri', methods=['GET', 'POST'])
+@giris_gerekli
+def oneri_sayfasi():
+    conn = db_baglantisi()
+    kid = session['kullanici_id']
+    program = program_getir_veya_olustur(conn, kid)
+    ogrenci_id = program["OgrenciId"]
+    sonuc = None
+
+    if request.method == 'POST' and request.form.get('islem') == 'profil':
+        ilgiler = [a for a in request.form.getlist('ilgi') if a in ALANLAR]
+        conn.execute("UPDATE Ogrenci SET IlgiAlanlari = ? WHERE Id = ?", (",".join(ilgiler), ogrenci_id))
+        for i, alan in enumerate(ALANLAR):
+            deger = request.form.get(f"ort{i}", "")
+            try:
+                ort = float(deger) if deger != "" else None
+            except ValueError:
+                ort = None
+            if ort is None or not 0 <= ort <= 4:
+                conn.execute("DELETE FROM AlanBasarisi WHERE OgrenciId = ? AND Alan = ?", (ogrenci_id, alan))
+            else:
+                conn.execute("INSERT INTO AlanBasarisi (OgrenciId, Alan, Ortalama) VALUES (?, ?, ?) "
+                             "ON CONFLICT (OgrenciId, Alan) DO UPDATE SET Ortalama = excluded.Ortalama",
+                             (ogrenci_id, alan, ort))
+        conn.commit()
+        flash("Profiliniz kaydedildi.", "basari")
+        return redirect(url_for('oneri_sayfasi'))
+
+    profil = ogrenci_profili(conn, ogrenci_id)
+    secilenler = program_dersleri(conn, program["Id"])
+    kalan_akts = AKTS_UST_SINIR - sum(s["AKTS"] for s in secilenler)
+
+    if request.method == 'POST' and request.form.get('islem') == 'oneri':
+        if not profil["ilgi_alanlari"]:
+            flash("Öneri almadan önce en az bir ilgi alanı seçip profilinizi kaydedin.", "hata")
+            return redirect(url_for('oneri_sayfasi'))
+        simdi = time.time()
+        if simdi - _son_oneri_zamani.get(kid, 0) < ONERI_BEKLEME_SURESI:
+            flash(f"Yeni öneri için {ONERI_BEKLEME_SURESI} saniye bekleyin.", "uyari")
+            return redirect(url_for('oneri_sayfasi'))
+        _son_oneri_zamani[kid] = simdi
+        secmeliler = conn.execute(SUBE_SORGUSU + " WHERE Ders.Secmeli = 1").fetchall()
+        sonuc = oneri.oneri_uret(
+            secmeliler, secilenler, profil, kalan_akts,
+            gunluge_yaz=lambda **k: ai_gunlugune_yaz(kid, **k))
+
+    return sayfa(ONERI, baslik="Seçmeli Ders Önerisi", aktif="oneri", profil=profil, alanlar=ALANLAR,
+                 not_secenekleri=NOT_SECENEKLERI, sonuc=sonuc, kalan_akts=kalan_akts,
+                 yuk=oneri.gun_yukleri(secilenler), ai_etkin=oneri.ai_etkin_mi())
+
+
+@app.route('/yonetici/ai-gunlugu')
+@yonetici_gerekli
+def ai_gunlugu():
+    kayitlar = db_baglantisi().execute("""
+        SELECT AiGunlugu.*, Kullanici.KullaniciAdi FROM AiGunlugu
+        LEFT JOIN Kullanici ON Kullanici.Id = AiGunlugu.KullaniciId
+        ORDER BY AiGunlugu.Id DESC LIMIT 50""").fetchall()
+    return sayfa(AI_GUNLUGU, baslik="AI Günlüğü", aktif="ai", kayitlar=kayitlar)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,4 @@
+{
+  "extraPaths": ["backend"],
+  "exclude": [".venv", "**/__pycache__"]
+}

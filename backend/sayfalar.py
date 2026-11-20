@@ -157,8 +157,8 @@ ANA_SAYFA = """
     <p>Haftalık tablo, AKTS sınırı ve aynı dersi iki kez almayı engelleyen kurallar.</p></div>
   <div class="ozellik"><span class="no">03</span><b>Çakışma tespiti</b>
     <p>Tam, kapsayan ve kısmi çakışmaları ortak saat aralığıyla gösterir.</p></div>
-  <div class="ozellik yakinda"><span class="no">04 · YAKINDA</span><b>Seçmeli ders önerisi</b>
-    <p>İlgi alanlarına göre uygun seçmeli derslerin önerilmesi.</p></div>
+  <div class="ozellik"><span class="no">04</span><b>Seçmeli ders önerisi</b>
+    <p>İlgi alanı, başarı ve haftalık yük dengesine göre gerekçeli öneriler; programı takvime aktarma.</p></div>
 </section>
 
 <section class="adimlar">
@@ -356,7 +356,10 @@ input:focus,select:focus{outline:none;border-color:var(--vurgu);box-shadow:0 0 0
   <nav class="menu">
     <a href="/panel" class="{{ 'aktif' if aktif == 'panel' }}">Panel</a>
     <a href="/dersler" class="{{ 'aktif' if aktif == 'dersler' }}">Ders Programım</a>
-    {% if session.get('rol') == 'yonetici' %}<a href="/yonetici/katalog" class="{{ 'aktif' if aktif == 'katalog' }}">Katalog Yönetimi</a>{% endif %}
+    <a href="/oneri" class="{{ 'aktif' if aktif == 'oneri' }}">Seçmeli Önerisi</a>
+    <a href="/takvim" class="{{ 'aktif' if aktif == 'takvim' }}">Takvim</a>
+    {% if session.get('rol') == 'yonetici' %}<a href="/yonetici/katalog" class="{{ 'aktif' if aktif == 'katalog' }}">Katalog Yönetimi</a>
+    <a href="/yonetici/ai-gunlugu" class="{{ 'aktif' if aktif == 'ai' }}">AI Günlüğü</a>{% endif %}
   </nav>
   <div class="kullanici">
     <span class="avatar">{{ session.get('kullanici_adi', '?')[:1] }}</span>
@@ -441,8 +444,8 @@ PANEL = """
   <a class="kisayol" href="/yonetici/katalog"><div class="ikon" style="background:var(--sari-acik)">🛠</div><b>Katalog yönetimi</b>
     <p>{{ yonetici.ders }} ders, {{ yonetici.sube }} şube, {{ yonetici.kullanici }} kullanıcı. Ders ve şube ekle/sil.</p></a>
   {% else %}
-  <div class="kisayol" style="opacity:.6"><div class="ikon" style="background:var(--hafif)">✨</div><b>Seçmeli ders önerisi</b>
-    <p>Yakında: ilgi alanlarına göre seçmeli ders önerileri.</p></div>
+  <a class="kisayol" href="/oneri"><div class="ikon" style="background:var(--yesil-acik)">✨</div><b>Seçmeli ders önerisi</b>
+    <p>İlgi alanı ve başarına göre programınla çakışmayan seçmeli dersler.</p></a>
   {% endif %}
 </div>
 """
@@ -503,7 +506,7 @@ DERSLER = """
     <thead><tr><th>Ders</th><th>Öğretim elemanı</th><th>Gün / saat</th><th>AKTS</th><th class="sag">Durum</th></tr></thead>
     <tbody>{% for k in katalog %}
     <tr>
-      <td><span class="kod">{{ k.DersKodu }}</span><span class="ikincil">{{ k.DersAdi }}</span></td>
+      <td><span class="kod">{{ k.DersKodu }}</span>{% if k.Secmeli %} <span class="rozet mavi">Seçmeli</span>{% endif %}<span class="ikincil">{{ k.DersAdi }}</span></td>
       <td>{{ k.HocaAdi }}</td><td>{{ k.Gun }} {{ k.Saat }}–{{ k.BitisSaati }}</td><td>{{ k.AKTS }}</td>
       <td class="sag">
         {% if k.secili %}<span class="rozet yesil">✓ Programda</span>
@@ -569,6 +572,8 @@ KATALOG_YONETIMI = """
         <div style="grid-column:span 2"><label>Ders adı</label><input name="ad" placeholder="Veri Yapıları" required></div>
         <div><label>Kredi</label><input name="kredi" type="number" min="1" max="10" required></div>
         <div><label>AKTS</label><input name="akts" type="number" min="1" max="15" required></div>
+        <div><label>İlgi alanı</label><select name="alan"><option value="">—</option>{% for a in alanlar %}<option>{{ a }}</option>{% endfor %}</select></div>
+        <div><label style="display:flex;gap:6px;align-items:center;margin-bottom:12px"><input type="checkbox" name="secmeli" value="1" style="width:auto"> Seçmeli</label></div>
         <div><button class="dugme dolu" style="width:100%;justify-content:center">Ders ekle</button></div>
       </div></form></div>
 
@@ -586,8 +591,10 @@ KATALOG_YONETIMI = """
 
 <div class="kart"><h2>Dersler</h2><p class="alt">Şubesi olan ders silinemez; önce şubelerini silin.</p>
   <div class="tablo-kap"><table>
-  <thead><tr><th>Kod</th><th>Ders adı</th><th>Kredi</th><th>AKTS</th><th class="sag"></th></tr></thead>
-  <tbody>{% for d in dersler %}<tr><td class="kod">{{ d.DersKodu }}</td><td>{{ d.DersAdi }}</td><td>{{ d.Kredi }}</td><td>{{ d.AKTS }}</td>
+  <thead><tr><th>Kod</th><th>Ders adı</th><th>Tür / alan</th><th>Kredi</th><th>AKTS</th><th class="sag"></th></tr></thead>
+  <tbody>{% for d in dersler %}<tr><td class="kod">{{ d.DersKodu }}</td><td>{{ d.DersAdi }}</td>
+    <td>{% if d.Secmeli %}<span class="rozet mavi">Seçmeli</span>{% else %}<span class="rozet">Zorunlu</span>{% endif %} <span class="ikincil" style="display:inline">{{ d.Alan or '' }}</span></td>
+    <td>{{ d.Kredi }}</td><td>{{ d.AKTS }}</td>
     <td class="sag"><form class="satir" method="post"><input type="hidden" name="islem" value="ders_sil"><input type="hidden" name="id" value="{{ d.Id }}">
       <button class="dugme kucuk tehlike">Sil</button></form></td></tr>{% endfor %}</tbody>
   </table></div></div>
@@ -611,4 +618,156 @@ MESAJ_SAYFASI = """
   <p style="color:var(--soluk)">{{ aciklama }}</p>
   <a class="dugme dolu" href="/panel" style="margin-top:8px">Panele dön</a>
 </div></div>
+"""
+
+
+# =====================================================================
+# HAFTA 9: Takvim entegrasyonu
+# =====================================================================
+TAKVIM = """
+<div class="sayfa-bas">
+  <div><h1>Takvime aktar</h1>
+  <p>{{ program.Donem }} dönemi · {{ bas.strftime('%d.%m.%Y') }} – {{ bit.strftime('%d.%m.%Y') }} · {{ secilenler|length }} ders, her biri haftalık tekrar eden etkinlik</p></div>
+  {% if secilenler and not cakisma_var %}
+  <a class="dugme dolu" href="/takvim/program.ics">📅 .ics dosyasını indir</a>
+  {% else %}
+  <button class="dugme dolu" disabled title="{{ 'Önce çakışmaları giderin' if cakisma_var else 'Önce ders ekleyin' }}">📅 .ics dosyasını indir</button>
+  {% endif %}
+</div>
+
+{% if not secilenler %}<div class="bildirim uyari">Programınızda ders yok. <a href="/dersler">Ders programınıza</a> ders ekleyin.</div>
+{% elif cakisma_var %}<div class="bildirim hata">Programınızda çakışma var; çakışmalı program takvime aktarılamaz. <a href="/dersler">Çakışmayı giderin →</a></div>{% endif %}
+
+<div class="iki-kolon">
+  <div class="kart"><h2>1 · Dosya ile içe aktar</h2>
+    <p class="alt">Standart iCalendar (.ics) dosyası; tüm takvim uygulamaları açabilir.</p>
+    <ol style="margin:0;padding-left:20px;color:var(--soluk);font-size:14px">
+      <li><b>.ics dosyasını indir</b> düğmesine basın.</li>
+      <li><b>Google Takvim:</b> Ayarlar → İçe ve dışa aktar → İçe aktar → dosyayı seçin.</li>
+      <li><b>Outlook:</b> Takvim → Takvim ekle → Dosyadan yükle.</li>
+    </ol>
+    <p style="font-size:13px;color:var(--soluk);margin-bottom:0">Dosya bir kopya oluşturur; programınızı değiştirirseniz yeniden indirmeniz gerekir.</p>
+  </div>
+
+  <div class="kart"><h2>2 · Abonelik bağlantısı (önerilen)</h2>
+    <p class="alt">Takvim servisi bu adresi düzenli okur; programı güncelleyip kaydettiğinizde takviminiz de güncellenir.</p>
+    {% if program.Kaydedildi and program.PaylasimKodu %}
+    <div class="paylas-kutu" style="margin-top:0">
+      <input id="tlink" readonly value="{{ request.host_url }}paylas/{{ program.PaylasimKodu }}/takvim.ics" onclick="this.select()">
+      <button class="dugme kucuk" type="button" onclick="navigator.clipboard.writeText(document.getElementById('tlink').value);this.textContent='Kopyalandı ✓'">Kopyala</button>
+    </div>
+    <p style="font-size:13px;color:var(--soluk);margin-bottom:0"><b>Google Takvim:</b> Diğer takvimler → <b>+</b> → URL ile → bağlantıyı yapıştırın.</p>
+    {% else %}
+    <p class="bos" style="padding:12px">Abonelik bağlantısı için önce <a href="/dersler">programınızı kaydedin</a>.</p>
+    {% endif %}
+  </div>
+</div>
+
+<div class="kart">
+  <div class="kart-bas"><div><h2>Resmî tatiller</h2>
+    <p class="alt" style="margin:0">Derse denk gelen tatil günleri takvimden otomatik çıkarılır. Kaynak: Calendarific API.</p></div>
+    {% if tatil_hatasi %}<span class="rozet sari">API kullanılamıyor</span>{% else %}<span class="rozet yesil">API bağlı</span>{% endif %}
+  </div>
+  {% if tatil_hatasi %}
+  <div class="bildirim uyari"><b>Resmî tatiller alınamadı:</b> {{ tatil_hatasi }}<br>
+    Takvim yine oluşturulur, ancak tatil günleri çıkarılmaz.</div>
+  {% elif not tatiller %}<p class="bos">Bu dönemde resmî tatil bulunamadı.</p>
+  {% else %}
+  <div class="tablo-kap"><table>
+    <thead><tr><th>Tarih</th><th>Tatil</th><th>Etkisi</th></tr></thead>
+    <tbody>{% for t in tatiller %}<tr>
+      <td>{{ t.tarih.strftime('%d.%m.%Y') }}<span class="ikincil">{{ t.gun }}</span></td><td>{{ t.ad }}</td>
+      <td>{% if t.dersler %}<span class="rozet kirmizi">{{ t.dersler|join(', ') }} yapılmaz</span>{% else %}<span class="rozet">Ders yok</span>{% endif %}</td>
+    </tr>{% endfor %}</tbody>
+  </table></div>
+  {% endif %}
+</div>
+"""
+
+
+# =====================================================================
+# HAFTA 10: Seçmeli ders önerisi (yapay zekâ bileşeni)
+# =====================================================================
+ONERI = """
+<div class="sayfa-bas">
+  <div><h1>Seçmeli ders önerisi</h1>
+  <p>İlgi alanın, alan başarın ve haftalık yük dengene göre · kalan AKTS: <b>{{ kalan_akts }}</b> ·
+    {% if ai_etkin %}<span class="rozet mavi">Yapay zekâ: Claude</span>{% else %}<span class="rozet sari">Yapay zekâ kapalı · kural tabanlı</span>{% endif %}</p></div>
+  <form class="satir" method="post"><input type="hidden" name="islem" value="oneri">
+    <button class="dugme dolu" {{ 'disabled title="Önce profilinizde ilgi alanı seçin"' if not profil.ilgi_alanlari }}>✨ Öneri al</button></form>
+</div>
+
+{% if sonuc %}
+<div class="kart" style="border-color:var(--vurgu)">
+  <div class="kart-bas"><h2>Önerilerin</h2>
+    {% if sonuc.kaynak == 'ai' %}<span class="rozet mavi">Yapay zekâ önerisi · kodla doğrulandı</span>
+    {% else %}<span class="rozet">Kural tabanlı öneri</span>{% endif %}</div>
+  {% if sonuc.uyari %}<div class="bildirim uyari">{{ sonuc.uyari }}</div>{% endif %}
+  {% if sonuc.genel_not %}<p style="margin-top:0">{{ sonuc.genel_not }}</p>{% endif %}
+  {% if sonuc.oneriler %}
+  <div class="tablo-kap"><table>
+    <thead><tr><th>Ders</th><th>Şube</th><th>Uyum</th><th>Gerekçe</th><th></th></tr></thead>
+    <tbody>{% for o in sonuc.oneriler %}<tr>
+      <td><span class="kod">{{ o.ders.ders_kodu }}</span> <span class="rozet">{{ o.ders.alan }}</span>
+        <span class="ikincil">{{ o.ders.ders_adi }} · {{ o.ders.akts }} AKTS</span></td>
+      <td>{{ o.sube.gun }} {{ o.sube.baslangic }}–{{ o.sube.bitis }}<span class="ikincil">{{ o.sube.hoca }}</span></td>
+      <td style="white-space:nowrap;color:var(--sari)" title="{{ o.uyum_puani }}/5">{{ '★' * o.uyum_puani }}<span style="color:var(--cizgi)">{{ '★' * (5 - o.uyum_puani) }}</span></td>
+      <td style="max-width:420px">{{ o.gerekce }}</td>
+      <td class="sag"><form class="satir" method="post" action="/program/ekle/{{ o.sube.sube_id }}"><button class="dugme kucuk ekle">+ Programa ekle</button></form></td>
+    </tr>{% endfor %}</tbody>
+  </table></div>
+  {% else %}<p class="bos">Şu an önerilebilecek uygun seçmeli ders yok.</p>{% endif %}
+  <p style="font-size:12px;color:var(--soluk);margin:12px 0 0">Öneriler yalnızca yol göstericidir. Yapay zekâ çıktısı; ders gerçekten açık mı,
+    programınla çakışıyor mu, AKTS sınırını aşıyor mu diye kodla denetlenir; geçmeyen öneriler gösterilmez.</p>
+</div>
+{% endif %}
+
+<div class="iki-kolon">
+  <div class="kart"><h2>Profilim</h2><p class="alt">Öneri yalnızca bu bilgilere ve ders programına dayanır.</p>
+    <form method="post"><input type="hidden" name="islem" value="profil">
+      <div class="tablo-kap"><table>
+        <thead><tr><th>İlgi alanı</th><th>Bu alandaki not ortalamam</th></tr></thead>
+        <tbody>{% for a in alanlar %}{% set i = loop.index0 %}<tr>
+          <td><label style="display:flex;gap:8px;align-items:center;margin:0;font-weight:500">
+            <input type="checkbox" name="ilgi" value="{{ a }}" style="width:auto" {{ 'checked' if a in profil.ilgi_alanlari }}> {{ a }}</label></td>
+          <td><select name="ort{{ i }}"><option value="">Ders almadım</option>
+            {% for deger, etiket in not_secenekleri %}<option value="{{ deger }}" {{ 'selected' if profil.basari.get(a) is not none and '%.1f'|format(profil.basari.get(a)) == deger }}>{{ etiket }}</option>{% endfor %}
+          </select></td>
+        </tr>{% endfor %}</tbody>
+      </table></div>
+      <button class="dugme dolu" style="margin-top:14px">Profili kaydet</button>
+    </form></div>
+
+  <div class="kart"><h2>Haftalık yüküm</h2><p class="alt">Öneri, şubesi daha boş günlere düşen seçeneği tercih eder (yoğunluk dengesi).</p>
+    {% for gun, dk in yuk.items() %}
+    <div style="display:grid;grid-template-columns:90px 1fr 60px;gap:10px;align-items:center;margin-bottom:10px;font-size:14px">
+      <b>{{ gun }}</b><div class="cubuk" style="margin:0"><i style="width:{{ [dk * 100 / 480, 100]|min|round|int }}%"></i></div>
+      <span style="color:var(--soluk);text-align:right">{{ (dk / 60)|round(1) }} sa</span>
+    </div>{% endfor %}
+  </div>
+</div>
+"""
+
+
+AI_GUNLUGU = """
+<div class="sayfa-bas">
+  <div><h1>Yapay zekâ günlüğü</h1><p>Son 50 öneri isteği · istem, ham yanıt ve doğrulama sonucu · yalnızca yöneticiler</p></div>
+</div>
+<div class="kart">
+  {% if not kayitlar %}<p class="bos">Henüz kayıt yok.</p>{% else %}
+  <div class="tablo-kap"><table>
+    <thead><tr><th>Zaman (UTC)</th><th>Kullanıcı</th><th>Durum</th><th>Açıklama</th><th>Ayrıntı</th></tr></thead>
+    <tbody>{% for k in kayitlar %}<tr style="vertical-align:top">
+      <td style="white-space:nowrap">{{ k.Zaman }}<span class="ikincil">{{ k.Model }}</span></td>
+      <td>{{ k.KullaniciAdi or '-' }}</td>
+      <td>{% set renk = {'basarili': 'yesil', 'kismen_gecersiz': 'sari', 'anahtar_yok': ''}.get(k.Durum, 'kirmizi') %}
+        <span class="rozet {{ renk }}">{{ k.Durum }}</span></td>
+      <td style="max-width:320px">{{ k.Aciklama or '' }}</td>
+      <td><details><summary style="cursor:pointer">İstem / yanıt</summary>
+        <pre style="white-space:pre-wrap;font-size:12px;max-width:520px;background:var(--hafif);padding:8px;border-radius:8px">{{ k.Istem }}</pre>
+        <pre style="white-space:pre-wrap;font-size:12px;max-width:520px;background:var(--vurgu-acik);padding:8px;border-radius:8px">{{ k.Yanit or '(yanıt yok)' }}</pre>
+      </details></td>
+    </tr>{% endfor %}</tbody>
+  </table></div>{% endif %}
+</div>
 """

@@ -4,6 +4,8 @@ erDiagram
     OGRENCI ||--o{ TERCIH : "yapar"
     DERS ||--o{ TERCIH : "hedef"
     DERS ||--o{ SUBE : "icerir"
+    OGRENCI ||--o{ ALAN_BASARISI : "basari verisi"
+    KULLANICI ||--o{ AI_GUNLUGU : "istek yapar"
     PROGRAM ||--o{ PROGRAM_DERSLERI : "secilir"
     SUBE ||--o{ PROGRAM_DERSLERI : "baglanir"
     KULLANICI {
@@ -19,6 +21,7 @@ erDiagram
         string Soyad
         string OgrenciNo UK
         int KullaniciId FK,UK
+        string IlgiAlanlari "Hafta 10"
     }
     DERS {
         int Id PK
@@ -26,6 +29,8 @@ erDiagram
         string DersAdi
         int Kredi
         int AKTS
+        int Secmeli "Hafta 10"
+        string Alan "Hafta 10"
     }
     SUBE {
         int Id PK
@@ -52,4 +57,24 @@ erDiagram
         int OgrenciId FK
         int DersId FK
         int OncelikSirasi
+    }
+    ALAN_BASARISI {
+        int Id PK
+        int OgrenciId FK
+        string Alan
+        float Ortalama "0-4"
+    }
+    AI_GUNLUGU {
+        int Id PK
+        string Zaman
+        int KullaniciId FK
+        string Model
+        string Istem
+        string Yanit
+        string Durum
+        string Aciklama
+    }
+    AYAR {
+        string Anahtar PK
+        string Deger
     }

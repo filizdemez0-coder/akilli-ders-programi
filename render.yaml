@@ -5,7 +5,7 @@ services:
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn --chdir backend app:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 60
+    startCommand: gunicorn --chdir backend app:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 90
     healthCheckPath: /saglik
     envVars:
       - key: PYTHON_VERSION
@@ -14,3 +14,8 @@ services:
         value: "1"
       - key: GIZLI_ANAHTAR
         generateValue: true     # Render rastgele, güçlü bir anahtar üretir
+      # Hafta 9-10: harici API anahtarları depoya YAZILMAZ; değerleri Render panelinden girilir
+      - key: TATIL_API_ANAHTARI
+        sync: false             # Calendarific resmî tatil API anahtarı
+      - key: ANTHROPIC_API_KEY
+        sync: false             # Claude API anahtarı (seçmeli ders önerisi)

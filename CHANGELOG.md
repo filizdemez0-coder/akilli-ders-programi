@@ -11,6 +11,32 @@ Uygulamanın çalışan sürümü `/saglik` adresinde ve sayfa altında görün�
 
 ---
 
+## [0.10.0] — 2026-11-20 · Yapay zekâ bileşeni: seçmeli ders önerisi
+### Eklenenler
+- `backend/oneri.py`: kural tabanlı ön eleme → Claude API (`claude-opus-5-5`, JSON şeması ile yapılandırılmış çıktı)
+  → kodla çıktı doğrulama → hata/geçersiz çıktıda kural tabanlı yedek öneri. Sayfa: `/oneri`.
+- Öğrenci profili: ilgi alanları + alan not ortalamaları (`Ogrenci.IlgiAlanlari`, `AlanBasarisi` tablosu).
+- `Ders.Secmeli`, `Ders.Alan` sütunları; yönetici ders eklerken tür ve alan seçer; katalogda "Seçmeli" etiketi.
+- 7 örnek seçmeli ders (bazı şubeleri bilerek zorunlu derslerle çakışır).
+- AI günlüğü (`AiGunlugu` tablosu, `/yonetici/ai-gunlugu`): istem, ham yanıt, doğrulama sonucu.
+- Öğrenci başına 15 sn öneri sınırı; `ANTHROPIC_API_KEY` ortam değişkeni; `anthropic==2.6.0`.
+- 8 birim + 3 entegrasyon testi (model yanıtı taklit edilir).
+
+### Düzeltilen hatalar
+- Örnek veriler her açılışta tamamlandığı için yöneticinin sildiği örnek dersler yeniden başlatmada geri geliyordu
+  → örnek veri paketleri `Ayar.OrnekVeriSurumu` ile izleniyor, her paket yalnızca bir kez ekleniyor (regresyon testi eklendi).
+- Canlıda `GIZLI_ANAHTAR` tanımlanmazsa uygulama depodaki bilinen anahtarla açılıyordu → `CANLI_ORTAM=1` iken anahtar yoksa açılmıyor.
+- Kullanılmayan, eski şemalı `frontend/init_db.py` kopyası kaldırıldı (tek kurulum betiği: `init_db.py`).
+
+## [0.9.0] — 2026-11-20 · Harici API entegrasyonu: takvim
+- `backend/takvim.py`: programı iCalendar (`.ics`, RFC 5545) olarak dışa aktarma; haftalık tekrar (`RRULE`), saat dilimi,
+  RFC kaçış ve 75 bayt satır katlama. Sayfa: `/takvim`, indirme: `/takvim/program.ics`.
+- Kaydedilmiş program için takvim aboneliği: `/paylas/<kod>/takvim.ics` (Google Takvim "URL ile ekle").
+- Calendarific resmî tatil API'si: derse denk gelen tatiller `EXDATE` ile çıkarılır. Anahtar `TATIL_API_ANAHTARI`
+  ortam değişkeninde; 5 sn zaman aşımı; 401/403/429/bağlantı/bozuk JSON hataları ayrı ayrı yönetilir; 24 saat önbellek,
+  429'da `Retry-After` kadar bekleme. API çalışmazsa takvim yine oluşturulur ve kullanıcı uyarılır.
+- gunicorn zaman aşımı 60 → 90 sn (harici API çağrıları için pay). 9 birim + 1 entegrasyon testi.
+
 ## [0.8.0] — 2026-11-12 · Vize ara sürümü (Git etiketi: `v0.8.0`)
 
 ### Entegrasyon

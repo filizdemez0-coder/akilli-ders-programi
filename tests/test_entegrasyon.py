@@ -15,6 +15,9 @@ import unittest
 # Uygulama içe aktarılmadan ÖNCE geçici veritabanı yolu verilir (ortam değişkeni)
 _GECICI = tempfile.mkdtemp()
 os.environ["VERITABANI_YOLU"] = os.path.join(_GECICI, "test.db")
+# Testler gerçek harici API'lere gitmez: anahtarlar kaldırılır (takvim ve öneri yedek yola düşer)
+os.environ.pop("TATIL_API_ANAHTARI", None)
+os.environ.pop("ANTHROPIC_API_KEY", None)
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "backend"))
 
 import app as uygulama  # noqa: E402  (ortam değişkeni ayarlandıktan sonra)
@@ -134,6 +137,70 @@ class EntegrasyonTestleri(unittest.TestCase):
         r = self.c.post("/yonetici/katalog", follow_redirects=True, data={
             "islem": "ders_ekle", "kod": "BIL101", "ad": "Tekrar", "kredi": 3, "akts": 5})
         self.assertIn("zaten var", metin(r))                      # benzersiz ders kodu
+
+    # ---- 6. Hafta 9: takvime aktarma (.ics) + abonelik bağlantısı
+    def test_takvim_disa_aktarma(self):
+        self.yeni_ogrenci("aylin")
+        r = self.c.get("/takvim/program.ics", follow_redirects=True)
+        self.assertIn("önce programınıza ders ekleyin", metin(r))
+        self.c.post(f"/program/ekle/{self.sube_id('BIL101', 'Pazartesi')}")
+        r = self.c.get("/takvim")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("Resmî tatiller alınamadı", metin(r))          # anahtar yok → uyarı, sayfa çalışır
+        r = self.c.get("/takvim/program.ics")
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.content_type.startswith("text/calendar"))
+        self.assertIn("attachment", r.headers["Content-Disposition"])
+        govde = r.get_data(as_text=True)
+        self.assertIn("BEGIN:VEVENT", govde)
+        self.assertIn("SUMMARY:BIL101 Programlama Temelleri", govde)
+        # Kaydedilmiş program için herkese açık abonelik adresi
+        self.assertEqual(self.c.get("/paylas/yok/takvim.ics").status_code, 404)
+        r = self.c.post("/program/kaydet", follow_redirects=True)
+        kod = re.search(r"/paylas/([\w-]+)", r.get_data(as_text=True)).group(1)
+        self.assertIn("BIL101", uygulama.app.test_client().get(f"/paylas/{kod}/takvim.ics").get_data(as_text=True))
+
+    # ---- 7. Hafta 10: seçmeli ders önerisi (API anahtarı yok → kural tabanlı yedek)
+    def test_secmeli_oneri_akisi(self):
+        self.yeni_ogrenci("baran")
+        r = self.c.post("/oneri", data={"islem": "oneri"}, follow_redirects=True)
+        self.assertIn("en az bir ilgi alanı", metin(r))
+        self.c.post("/oneri", data={"islem": "profil", "ilgi": ["Veri ve Yapay Zekâ", "Uydurma Alan"], "ort1": "3.5"})
+        uygulama._son_oneri_zamani.clear()
+        r = self.c.post("/oneri", data={"islem": "oneri"})
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("Kural tabanlı öneri", metin(r))
+        self.assertIn("SEC301", metin(r))                               # ilgi alanındaki seçmeli ders
+        r = self.c.post("/oneri", data={"islem": "oneri"}, follow_redirects=True)
+        self.assertIn("saniye bekleyin", metin(r))                       # art arda istek sınırı
+        with uygulama.app.app_context():
+            conn = uygulama.db_baglantisi()
+            kayit = conn.execute("SELECT Durum, Istem FROM AiGunlugu ORDER BY Id DESC").fetchone()
+            ilgi = conn.execute("SELECT IlgiAlanlari FROM Ogrenci JOIN Kullanici ON Kullanici.Id = Ogrenci.KullaniciId "
+                                "WHERE KullaniciAdi = 'baran'").fetchone()[0]
+        self.assertEqual(kayit["Durum"], "anahtar_yok")
+        self.assertIn("SEC301", kayit["Istem"])
+        self.assertEqual(ilgi, "Veri ve Yapay Zekâ")                    # listede olmayan alan kaydedilmedi
+        self.assertEqual(self.c.get("/yonetici/ai-gunlugu").status_code, 403)
+
+    def test_yonetici_ai_gunlugu(self):
+        self.giris("admin", "admin123")
+        self.assertEqual(self.c.get("/yonetici/ai-gunlugu").status_code, 200)
+
+    # ---- 8. Regresyon: yöneticinin sildiği örnek ders yeniden başlatmada geri gelmez
+    def test_silinen_ornek_veri_geri_gelmez(self):
+        self.giris("admin", "admin123")
+        sid = self.sube_id("SEC306", "Çarşamba")
+        self.c.post("/yonetici/katalog", data={"islem": "sube_sil", "id": sid})
+        with uygulama.app.app_context():
+            conn = uygulama.db_baglantisi()
+            ders_id = conn.execute("SELECT Id FROM Ders WHERE DersKodu = 'SEC306'").fetchone()[0]
+        self.c.post("/yonetici/katalog", data={"islem": "ders_sil", "id": ders_id})
+        conn = uygulama.baglanti_al()
+        uygulama.sema_guncelle(conn)                                     # uygulama yeniden açılıyormuş gibi
+        uygulama.ornek_veri_ekle(conn)
+        self.assertIsNone(conn.execute("SELECT 1 FROM Ders WHERE DersKodu = 'SEC306'").fetchone())
+        conn.close()
 
 
 if __name__ == "__main__":
