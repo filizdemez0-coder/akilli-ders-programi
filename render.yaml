@@ -17,5 +17,5 @@ services:
       # Hafta 9-10: harici API anahtarları depoya YAZILMAZ; değerleri Render panelinden girilir
       - key: TATIL_API_ANAHTARI
         sync: false             # Calendarific resmî tatil API anahtarı
-      - key: ANTHROPIC_API_KEY
-        sync: false             # Claude API anahtarı (seçmeli ders önerisi)
+      - key: GEMINI_API_KEY
+        sync: false             # Google Gemini API anahtarı - ücretsiz (seçmeli ders önerisi)

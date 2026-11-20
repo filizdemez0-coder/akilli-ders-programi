@@ -692,7 +692,7 @@ ONERI = """
 <div class="sayfa-bas">
   <div><h1>Seçmeli ders önerisi</h1>
   <p>İlgi alanın, alan başarın ve haftalık yük dengene göre · kalan AKTS: <b>{{ kalan_akts }}</b> ·
-    {% if ai_etkin %}<span class="rozet mavi">Yapay zekâ: Claude</span>{% else %}<span class="rozet sari">Yapay zekâ kapalı · kural tabanlı</span>{% endif %}</p></div>
+    {% if ai_etkin %}<span class="rozet mavi">Yapay zekâ: Gemini</span>{% else %}<span class="rozet sari">Yapay zekâ kapalı · kural tabanlı</span>{% endif %}</p></div>
   <form class="satir" method="post"><input type="hidden" name="islem" value="oneri">
     <button class="dugme dolu" {{ 'disabled title="Önce profilinizde ilgi alanı seçin"' if not profil.ilgi_alanlari }}>✨ Öneri al</button></form>
 </div>

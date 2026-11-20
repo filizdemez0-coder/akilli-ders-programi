@@ -17,7 +17,7 @@ _GECICI = tempfile.mkdtemp()
 os.environ["VERITABANI_YOLU"] = os.path.join(_GECICI, "test.db")
 # Testler gerçek harici API'lere gitmez: anahtarlar kaldırılır (takvim ve öneri yedek yola düşer)
 os.environ.pop("TATIL_API_ANAHTARI", None)
-os.environ.pop("ANTHROPIC_API_KEY", None)
+os.environ.pop("GEMINI_API_KEY", None)
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "backend"))
 
 import app as uygulama  # noqa: E402  (ortam değişkeni ayarlandıktan sonra)

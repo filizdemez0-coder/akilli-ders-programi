@@ -27,13 +27,13 @@ import oneri
 #   CANLI_ORTAM      : "1" ise HTTPS'e özel güvenli çerez ayarları açılır
 #   PORT             : bulut platformunun verdiği port (Render/Railway otomatik tanımlar)
 #   TATIL_API_ANAHTARI : (Hafta 9) Calendarific resmî tatil API anahtarı - isteğe bağlı
-#   ANTHROPIC_API_KEY  : (Hafta 10) Claude API anahtarı - isteğe bağlı; yoksa kural tabanlı öneri
+#   GEMINI_API_KEY     : (Hafta 10) Google Gemini API anahtarı (ücretsiz) - isteğe bağlı; yoksa kural tabanlı öneri
 # Hiçbiri tanımlı değilse uygulama yerelde eskisi gibi çalışır.
 # -------------------------------------------------------------
 CANLI_ORTAM = os.environ.get("CANLI_ORTAM") == "1"
 
 # Anlamsal sürümleme (MAJOR.MINOR.PATCH) - Hafta 8: vize ara sürümü
-SURUM = "0.10.0"
+SURUM = "0.10.1"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("GIZLI_ANAHTAR", "akillidersprogrami_gizli_anahtar")

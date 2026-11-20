@@ -26,9 +26,9 @@
 | Hafta | Modül | Durum |
 |---|---|---|
 | 9 | Takvim: `.ics` dışa aktarma, abonelik bağlantısı, Calendarific resmî tatil API'si | ✅ Kod + 10 test. API anahtarı Render'a girilince tatiller etkinleşir |
-| 10 | Seçmeli ders önerisi: ön eleme, Claude API, çıktı doğrulama, kural tabanlı yedek, AI günlüğü | ✅ Kod + 11 test. API anahtarı girilmezse kural tabanlı yedek çalışır |
+| 10 | Seçmeli ders önerisi: ön eleme, Gemini API (ücretsiz), çıktı doğrulama, kural tabanlı yedek, AI günlüğü | ✅ Kod + 14 test. API anahtarı girilmezse kural tabanlı yedek çalışır |
 
 **Düzeltilen bilinen hatalar:** örnek verilerin geri gelmesi, canlıda varsayılan gizli anahtar, eski `frontend/init_db.py`.
-**Test:** 36/36 geçti.
+**Test:** 39/39 geçti.
 
 **Sonraki adım (Hafta 11):** alternatif programları karşılaştırma modülü; CSRF belirteci; `/cikis`'in POST'a çevrilmesi.

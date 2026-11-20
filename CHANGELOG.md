@@ -11,9 +11,18 @@ Uygulamanın çalışan sürümü `/saglik` adresinde ve sayfa altında görün�
 
 ---
 
+## [0.10.1] — 2026-11-20 · Yapay zekâ sağlayıcısı: Claude → Google Gemini (ücretsiz)
+- Claude API ücretli olduğu (kredi yüklenemediği) için öneri modeli **Google Gemini API**'ye (`gemini-3.8-flash`, ücretsiz kota) taşındı.
+  İstem, JSON şeması, çıktı doğrulama ve kural tabanlı yedek değişmedi; yalnızca model çağrısı (`gemini_cagir`) değişti.
+- REST `generateContent` + `responseMimeType`/`responseJsonSchema`; anahtar `GEMINI_API_KEY`, `x-goog-api-key` başlığında.
+  400 (`API_KEY_INVALID`), 401/403, 404 (model), 429 (ücretsiz kota), zaman aşımı, engellenen yanıt (`blockReason`),
+  yarım kalan yanıt (`MAX_TOKENS`) ayrı ayrı yönetilir. `anthropic` paketi bağımlılıklardan çıkarıldı (ek paket gerekmez).
+- Kural tabanlı gerekçelerde `capitalize()` ilk harf dışındakileri küçültüyordu ("Web ve mobil", "salı") → yalnızca ilk harf büyütülüyor.
+- 3 yeni birim testi (toplam 39).
+
 ## [0.10.0] — 2026-11-20 · Yapay zekâ bileşeni: seçmeli ders önerisi (Git etiketi: `v0.10.0`, 0.9.0 ile birlikte yayımlandı)
 ### Eklenenler
-- `backend/oneri.py`: kural tabanlı ön eleme → Claude API (`claude-opus-5-5`, JSON şeması ile yapılandırılmış çıktı)
+- `backend/oneri.py`: kural tabanlı ön eleme → Claude API (`claude-opus-5-5`, JSON şeması ile yapılandırılmış çıktı; 0.10.1'de Gemini'ye taşındı)
   → kodla çıktı doğrulama → hata/geçersiz çıktıda kural tabanlı yedek öneri. Sayfa: `/oneri`.
 - Öğrenci profili: ilgi alanları + alan not ortalamaları (`Ogrenci.IlgiAlanlari`, `AlanBasarisi` tablosu).
 - `Ders.Secmeli`, `Ders.Alan` sütunları; yönetici ders eklerken tür ve alan seçer; katalogda "Seçmeli" etiketi.

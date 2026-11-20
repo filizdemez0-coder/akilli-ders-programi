@@ -1,9 +1,12 @@
 """Hafta 10 - Seçmeli ders öneri modülü birim testleri.
 Gerçek yapay zekâ API'si çağrılmaz; model yanıtı sahte bir işlevle verilir (cagir=...)."""
+import io
 import json
 import os
 import sys
 import unittest
+import urllib.error
+from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "backend"))
 
@@ -109,6 +112,50 @@ class AiDogrulamaTestleri(unittest.TestCase):
         s = oneri.oneri_uret(SECMELILER, PROGRAM, PROFIL, 0, cagir=lambda i: cagrildi.append(i))
         self.assertEqual(s["oneriler"], [])
         self.assertEqual(cagrildi, [])
+
+
+class GeminiCagriTestleri(unittest.TestCase):
+    """gemini_cagir(): ağa çıkılmaz, _http_post taklit edilir."""
+
+    def setUp(self):
+        self.ortam = mock.patch.dict(os.environ, {"GEMINI_API_KEY": "test-anahtari"})
+        self.ortam.start()
+        self.addCleanup(self.ortam.stop)
+
+    def test_basarili_yanit_ve_istek_bicimi(self):
+        yanit = {"candidates": [{"finishReason": "STOP", "content": {"parts": [
+            {"text": "düşünce", "thought": True}, {"text": '{"oneriler": [], "genel_not": "x"}'}]}}]}
+        with mock.patch.object(oneri, "_http_post", return_value=yanit) as sahte:
+            metin = oneri.gemini_cagir("istem")
+        self.assertEqual(json.loads(metin)["genel_not"], "x")                 # düşünce parçası katılmadı
+        url, govde, anahtar = sahte.call_args.args
+        self.assertNotIn("test-anahtari", url)                               # anahtar URL'de değil
+        self.assertEqual(anahtar, "test-anahtari")
+        self.assertEqual(govde["generationConfig"]["responseMimeType"], "application/json")
+        self.assertEqual(govde["generationConfig"]["responseJsonSchema"], oneri.YANIT_SEMASI)
+
+    def _http_hatasi(self, kod, govde=b""):
+        return urllib.error.HTTPError("https://x", kod, "hata", {}, io.BytesIO(govde))
+
+    def test_http_hatalari(self):
+        durumlar = [(self._http_hatasi(400, b'{"reason": "API_KEY_INVALID"}'), "anahtarı geçersiz"),
+                    (self._http_hatasi(429), "istek sınırı"),
+                    (self._http_hatasi(404), "modeli bulunamadı"),
+                    (urllib.error.URLError(TimeoutError()), "bağlanılamadı")]
+        for hata, beklenen in durumlar:
+            with mock.patch.object(oneri, "_http_post", side_effect=hata):
+                with self.assertRaises(oneri.OneriHatasi) as ctx:
+                    oneri.gemini_cagir("istem")
+            self.assertIn(beklenen, str(ctx.exception))
+            self.assertNotIn("test-anahtari", str(ctx.exception))
+
+    def test_engellenen_ve_yarim_kalan_yanit(self):
+        for yanit, beklenen in [({"promptFeedback": {"blockReason": "SAFETY"}}, "SAFETY"),
+                                ({"candidates": [{"finishReason": "MAX_TOKENS", "content": {"parts": []}}]}, "MAX_TOKENS")]:
+            with mock.patch.object(oneri, "_http_post", return_value=yanit):
+                with self.assertRaises(oneri.OneriHatasi) as ctx:
+                    oneri.gemini_cagir("istem")
+            self.assertIn(beklenen, str(ctx.exception))
 
 
 if __name__ == "__main__":

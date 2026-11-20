@@ -8,7 +8,8 @@ Akış (yapay zekâ "körlemesine" kullanılmaz):
                            çakışmayan seçmeli dersler. Yapay zekâ bu listenin DIŞINA çıkamaz.
   2. istem_olustur()     - İSTEM: öğrencinin ilgi alanları + alan not ortalamaları (tercih/başarı verisi),
                            günlük ders yükü ve aday listesi JSON olarak verilir.
-  3. claude_cagir()      - MODEL: Claude API, JSON şemasına uygun yanıt üretir (structured outputs).
+  3. gemini_cagir()      - MODEL: Google Gemini API (ücretsiz kota), JSON şemasına uygun yanıt üretir
+                           (responseMimeType=application/json + responseJsonSchema).
   4. ai_yanitini_dogrula() - DOĞRULAMA: ders/şube gerçekten aday mı, çakışma var mı, AKTS taşıyor mu,
                            gerekçe boş mu? Geçersiz öneriler atılır ve nedeni günlüğe yazılır.
   5. Yedek (fallback)    - API anahtarı yoksa, API hata verirse veya hiçbir öneri doğrulamayı geçemezse
@@ -17,10 +18,15 @@ Akış (yapay zekâ "körlemesine" kullanılmaz):
 """
 import json
 import os
+import urllib.error
+import urllib.request
 
 from cakisma import GUNLER, cakisiyor_mu, dakikaya_cevir
 
-MODEL = "claude-opus-5-5"
+# Ücretsiz kotası olan model. Google modeli emekliye ayırırsa kod değişmeden GEMINI_MODEL ile değiştirilir.
+MODEL = os.environ.get("GEMINI_MODEL", "").strip() or "gemini-3.8-flash"
+API_ADRESI = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+ZAMAN_ASIMI = 25   # saniye
 EN_FAZLA_ONERI = 3
 GEREKCE_UZUNLUGU = 400
 
@@ -105,6 +111,11 @@ def _sube_oturumu(sube):
     return {"Gun": sube["gun"], "Baslangic": sube["baslangic"], "Bitis": sube["bitis"]}
 
 
+def _ilk_harf_buyuk(metin):
+    # str.capitalize() geri kalan harfleri küçültür ("Web ve Mobil" -> "Web ve mobil"); yalnızca ilk harf büyütülür
+    return metin[:1].upper() + metin[1:]
+
+
 def kural_tabanli_oneri(adaylar, profil, kalan_akts, en_fazla=EN_FAZLA_ONERI):
     """Yapay zekâ olmadan öneri: puan = ilgi (3) + alan ortalaması (0-4 → 0-3) - gün yükü cezası."""
     ilgiler = set(profil["ilgi_alanlari"])
@@ -132,7 +143,7 @@ def kural_tabanli_oneri(adaylar, profil, kalan_akts, en_fazla=EN_FAZLA_ONERI):
         nedenler.append(f"{sube['gun']} günü mevcut yükün {sube['gun_yuku_dk']} dk" if sube["gun_yuku_dk"]
                         else f"{sube['gun']} günün şu an boş")
         secilen.append({"ders": d, "sube": sube, "uyum_puani": max(1, min(5, round(puan))),
-                        "gerekce": "; ".join(nedenler).capitalize() + "."})
+                        "gerekce": _ilk_harf_buyuk("; ".join(nedenler)) + "."})
         toplam += d["akts"]
     return secilen
 
@@ -151,45 +162,66 @@ def istem_olustur(adaylar, profil, secilenler, kalan_akts):
 
 
 # ------------------------------------------------------------------ 3. Model çağrısı
+def _anahtar():
+    return os.environ.get("GEMINI_API_KEY", "").strip()
+
+
 def ai_etkin_mi():
-    return bool(os.environ.get("ANTHROPIC_API_KEY", "").strip())
+    return bool(_anahtar())
 
 
-def claude_cagir(kullanici_istemi):
-    """Claude API'yi çağırır, ham JSON metnini döndürür. Her hata OneriHatasi'na çevrilir."""
+def _http_post(url, govde, anahtar):
+    """Tek bir POST isteği atar ve JSON döndürür. Anahtar URL'de değil başlıkta gider (günlüklere sızmaz).
+    (Testlerde bu fonksiyon taklit edilir.)"""
+    istek = urllib.request.Request(
+        url, data=json.dumps(govde).encode("utf-8"), method="POST",
+        headers={"Content-Type": "application/json", "x-goog-api-key": anahtar})
+    with urllib.request.urlopen(istek, timeout=ZAMAN_ASIMI) as yanit:
+        return json.loads(yanit.read().decode("utf-8"))
+
+
+def gemini_cagir(kullanici_istemi):
+    """Gemini API'yi çağırır, modelin ürettiği ham JSON metnini döndürür. Her hata OneriHatasi'na çevrilir."""
+    govde = {
+        "systemInstruction": {"parts": [{"text": SISTEM_ISTEMI}]},
+        "contents": [{"role": "user", "parts": [{"text": kullanici_istemi}]}],
+        "generationConfig": {
+            "responseMimeType": "application/json",   # yanıt düz metin değil JSON olsun
+            "responseJsonSchema": YANIT_SEMASI,        # ve bu şemaya uysun
+            "maxOutputTokens": 8000,
+        },
+    }
     try:
-        import anthropic
-    except ImportError:
-        raise OneriHatasi("anthropic paketi kurulu değil.", "anahtar_yok") from None
+        veri = _http_post(API_ADRESI.format(model=MODEL), govde, _anahtar())
+    except urllib.error.HTTPError as e:
+        try:
+            ayrinti = e.read().decode("utf-8", "replace")[:500]
+        except OSError:
+            ayrinti = ""
+        e.close()
+        if e.code in (401, 403) or "API_KEY_INVALID" in ayrinti:
+            raise OneriHatasi("Yapay zekâ API anahtarı geçersiz.") from None
+        if e.code == 429:
+            raise OneriHatasi("Yapay zekâ API'sinin ücretsiz istek sınırı aşıldı; biraz sonra tekrar deneyin.") from None
+        if e.code == 404:
+            raise OneriHatasi(f"'{MODEL}' modeli bulunamadı (GEMINI_MODEL ortam değişkenini kontrol edin).") from None
+        raise OneriHatasi(f"Yapay zekâ API'si HTTP {e.code} hatası verdi.") from None
+    except (TimeoutError, urllib.error.URLError, OSError):
+        raise OneriHatasi("Yapay zekâ API'sine bağlanılamadı veya zamanında yanıt vermedi.") from None
+    except ValueError:
+        raise OneriHatasi("Yapay zekâ API'si geçersiz yanıt döndürdü.", "gecersiz") from None
 
-    istemci = anthropic.Anthropic(timeout=25.0, max_retries=1)   # anahtar ANTHROPIC_API_KEY'den okunur
-    try:
-        yanit = istemci.beta.messages.create(
-            model=MODEL,
-            max_tokens=8000,
-            system=SISTEM_ISTEMI,
-            messages=[{"role": "user", "content": kullanici_istemi}],
-            output_config={"effort": "low", "format": {"type": "json_schema", "schema": YANIT_SEMASI}},
-            # Güvenlik sınıflandırıcısı isteği reddederse sunucu uygun yedek modelle yeniden dener
-            betas=["server-side-fallback-2026-07-01"],
-            fallbacks="default",
-        )
-    except anthropic.AuthenticationError:
-        raise OneriHatasi("Yapay zekâ API anahtarı geçersiz.") from None
-    except anthropic.RateLimitError:
-        raise OneriHatasi("Yapay zekâ API'sinin istek sınırı aşıldı.") from None
-    except anthropic.APITimeoutError:
-        raise OneriHatasi("Yapay zekâ API'si zamanında yanıt vermedi.") from None
-    except anthropic.APIConnectionError:
-        raise OneriHatasi("Yapay zekâ API'sine bağlanılamadı.") from None
-    except anthropic.APIStatusError as e:
-        raise OneriHatasi(f"Yapay zekâ API'si HTTP {e.status_code} hatası verdi.") from None
-
-    if yanit.stop_reason == "refusal":
-        raise OneriHatasi("Model isteği yanıtlamayı reddetti.")
-    if yanit.stop_reason == "max_tokens":
-        raise OneriHatasi("Model yanıtı yarıda kesildi (max_tokens).")
-    metin = next((b.text for b in yanit.content if b.type == "text"), "")
+    adaylar = veri.get("candidates") or []
+    if not adaylar:
+        neden = (veri.get("promptFeedback") or {}).get("blockReason", "bilinmiyor")
+        raise OneriHatasi(f"Model yanıt üretmedi (engelleme nedeni: {neden}).")
+    aday = adaylar[0]
+    if aday.get("finishReason") == "MAX_TOKENS":
+        raise OneriHatasi("Model yanıtı yarıda kesildi (MAX_TOKENS).")
+    if aday.get("finishReason") not in (None, "STOP"):
+        raise OneriHatasi(f"Model yanıtı tamamlanmadı ({aday.get('finishReason')}).")
+    metin = "".join(p.get("text", "") for p in (aday.get("content") or {}).get("parts", [])
+                    if not p.get("thought"))   # düşünme parçaları varsa yanıta katılmaz
     if not metin.strip():
         raise OneriHatasi("Model boş yanıt döndürdü.")
     return metin
@@ -250,7 +282,7 @@ def oneri_uret(secmeli_subeler, secilenler, profil, kalan_akts, gunluge_yaz=lamb
     """Sonuç: {kaynak: 'ai'|'kural', oneriler, genel_not, uyari}
     gunluge_yaz(istem=, yanit=, durum=, aciklama=, model=) - AI günlüğü için (app.py veritabanına yazar).
     cagir: testlerde gerçek API yerine kullanılacak sahte işlev."""
-    cagir = cagir or claude_cagir
+    cagir = cagir or gemini_cagir
     adaylar = adaylari_hazirla(secmeli_subeler, secilenler, kalan_akts)
     if not adaylar:
         return {"kaynak": "kural", "oneriler": [], "genel_not": "",
@@ -262,8 +294,8 @@ def oneri_uret(secmeli_subeler, secilenler, profil, kalan_akts, gunluge_yaz=lamb
         return {"kaynak": "kural", "oneriler": kural_tabanli_oneri(adaylar, profil, kalan_akts),
                 "genel_not": "", "uyari": neden + " Öneriler kural tabanlı yöntemle üretildi."}
 
-    if cagir is claude_cagir and not ai_etkin_mi():
-        gunluge_yaz(istem=istem, yanit=None, durum="anahtar_yok", aciklama="ANTHROPIC_API_KEY tanımlı değil", model=MODEL)
+    if cagir is gemini_cagir and not ai_etkin_mi():
+        gunluge_yaz(istem=istem, yanit=None, durum="anahtar_yok", aciklama="GEMINI_API_KEY tanımlı değil", model=MODEL)
         return yedek("Yapay zekâ servisi yapılandırılmamış.")
 
     try:

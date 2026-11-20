@@ -121,13 +121,13 @@ Kurallar: boş veya çakışmalı program takvime aktarılamaz (K6 ile tutarlı)
 **Akış:**
 1. **Kural tabanlı ön eleme** — programda olmayan, AKTS sınırına sığan ve en az bir şubesi programla çakışmayan seçmeli dersler aday olur. Model bu listenin dışına çıkamaz.
 2. **İstem** — ilgi alanları, alan ortalamaları, günlük ders yükü (dakika) ve aday listesi JSON olarak; kurallar sistem isteminde (`oneri.SISTEM_ISTEMI`).
-3. **Model** — Claude API (`claude-opus-5-5`), yanıt JSON şemasına uygun üretilir (*structured outputs*). Anahtar: `ANTHROPIC_API_KEY` ortam değişkeni.
+3. **Model** — Google Gemini API (`gemini-3.8-flash`, **ücretsiz kota**, kart gerekmez). REST `generateContent` çağrısı Python'un kendi `urllib` modülüyle yapılır; yanıt `responseMimeType: application/json` + `responseJsonSchema` ile JSON şemasına uygun üretilir. Anahtar: `GEMINI_API_KEY` ortam değişkeni (aistudio.google.com → Get API key), istekte URL'de değil `x-goog-api-key` başlığında gider. Model `GEMINI_MODEL` ile değiştirilebilir.
 4. **Çıktı doğrulama** — ders gerçekten aday mı, şube o derse ait mi, önerilenler birbiriyle çakışıyor mu, AKTS sınırı, boş gerekçe, en fazla 3 öneri, puan 1–5. Geçmeyen öneri gösterilmez, nedeni günlüğe yazılır.
 5. **Yedek** — anahtar yoksa, API hata verirse, JSON bozuksa ya da hiçbir öneri doğrulamayı geçmezse kural tabanlı öneri (ilgi + başarı − gün yükü puanı) devreye girer. Ekranda sonucun hangi yöntemle üretildiği yazar.
 
 **Yoğunluk dengesi:** Bir dersin birden çok şubesi varsa mevcut ders yükü daha az olan gün tercih edilir; sayfada günlük yük çubukları gösterilir.
 **Günlük (şeffaflık):** Her istekte istem, ham yanıt, durum (`basarili`, `kismen_gecersiz`, `gecersiz`, `hata`, `anahtar_yok`) ve açıklama `AiGunlugu` tablosuna yazılır; yönetici `/yonetici/ai-gunlugu` sayfasından inceler.
-**Maliyet / hız sınırı:** Aynı öğrenci 15 saniyede bir öneri isteyebilir; istemci zaman aşımı 25 sn, 1 yeniden deneme.
+**Maliyet / hız sınırı:** Ücretsiz kotanın dakikalık/günlük sınırı vardır; aynı öğrenci 15 saniyede bir öneri isteyebilir, istemci zaman aşımı 25 sn. Kota aşılırsa (HTTP 429) kural tabanlı yedek devreye girer.
 
-**Testler:** `python -m unittest discover tests -v` → 36 test (çakışma 8, takvim 9, öneri 8, entegrasyon 11). Testler gerçek API'lere gitmez; yanıtlar taklit edilir.
+**Testler:** `python -m unittest discover tests -v` → 39 test (çakışma 8, takvim 9, öneri 11, entegrasyon 11). Testler gerçek API'lere gitmez; yanıtlar taklit edilir.
 **Belgeler:** `docs/AI_KULLANIM_GUNLUGU.md`, `docs/ILERLEME_RAPORU.md`, `docs/SOZLU_HAZIRLIK_H9_H10.md`
