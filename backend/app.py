@@ -33,7 +33,7 @@ import oneri
 CANLI_ORTAM = os.environ.get("CANLI_ORTAM") == "1"
 
 # Anlamsal sürümleme (MAJOR.MINOR.PATCH) - Hafta 8: vize ara sürümü
-SURUM = "0.10.1"
+SURUM = "0.10.2"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("GIZLI_ANAHTAR", "akillidersprogrami_gizli_anahtar")

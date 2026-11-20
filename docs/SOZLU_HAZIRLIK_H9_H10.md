@@ -71,7 +71,7 @@ Ayrıca önerilen dersler **birbiriyle de** çakışmamalı ve toplam AKTS sın�
 ### 3b) API anahtarını ve hataları nasıl yönettin?
 `GEMINI_API_KEY` ortam değişkeninde (Render → Environment); istekte URL'de değil `x-goog-api-key` başlığında gider. `gemini_cagir()` hata türlerini ayırır:
 geçersiz anahtar (400 `API_KEY_INVALID`/401/403), model yok (404), ücretsiz kota doldu (429), zaman aşımı, model yanıtı engelledi (`blockReason`),
-yanıt yarıda kesildi (`MAX_TOKENS`). Hepsinde kural tabanlı yedek çalışır.
+yanıt yarıda kesildi (`MAX_TOKENS`). Yoğunluk/kota/zaman aşımında önce ikinci ücretsiz model (`gemini-3.5-flash-lite`) denenir; o da olmazsa kural tabanlı yedek çalışır. Google'ın hata mesajı AI günlüğüne yazılır.
 
 ### 4) AI çıktısı hatalıysa ne yapıyorsun?
 `ai_yanitini_dogrula()` her öneriyi tek tek denetler: ders aday listesinde mi (uydurma ders), şube o derse ait mi, aynı ders iki kez mi,

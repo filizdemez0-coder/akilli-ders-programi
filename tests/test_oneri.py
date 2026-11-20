@@ -126,8 +126,9 @@ class GeminiCagriTestleri(unittest.TestCase):
         yanit = {"candidates": [{"finishReason": "STOP", "content": {"parts": [
             {"text": "düşünce", "thought": True}, {"text": '{"oneriler": [], "genel_not": "x"}'}]}}]}
         with mock.patch.object(oneri, "_http_post", return_value=yanit) as sahte:
-            metin = oneri.gemini_cagir("istem")
+            metin, model = oneri.gemini_cagir("istem")
         self.assertEqual(json.loads(metin)["genel_not"], "x")                 # düşünce parçası katılmadı
+        self.assertEqual(model, oneri.MODELLER[0])
         url, govde, anahtar = sahte.call_args.args
         self.assertNotIn("test-anahtari", url)                               # anahtar URL'de değil
         self.assertEqual(anahtar, "test-anahtari")
@@ -138,16 +139,38 @@ class GeminiCagriTestleri(unittest.TestCase):
         return urllib.error.HTTPError("https://x", kod, "hata", {}, io.BytesIO(govde))
 
     def test_http_hatalari(self):
-        durumlar = [(self._http_hatasi(400, b'{"reason": "API_KEY_INVALID"}'), "anahtarı geçersiz"),
-                    (self._http_hatasi(429), "istek sınırı"),
-                    (self._http_hatasi(404), "modeli bulunamadı"),
-                    (urllib.error.URLError(TimeoutError()), "bağlanılamadı")]
-        for hata, beklenen in durumlar:
-            with mock.patch.object(oneri, "_http_post", side_effect=hata):
+        # Google'ın gerçek geçersiz anahtar yanıtı biçimi
+        gecersiz = (b'{"error": {"code": 400, "message": "API key not valid.", "status": "INVALID_ARGUMENT",'
+                    b' "details": [{"reason": "API_KEY_INVALID"}]}}')
+        durumlar = [(lambda: self._http_hatasi(400, gecersiz), "anahtarı geçersiz"),
+                    (lambda: self._http_hatasi(429), "istek sınırı"),
+                    (lambda: self._http_hatasi(404), "modeli bulunamadı"),
+                    (lambda: urllib.error.URLError(TimeoutError()), "bağlanılamadı")]
+        for uret, beklenen in durumlar:
+            hatalar = [uret(), uret()]
+            for h in hatalar:
+                if isinstance(h, urllib.error.HTTPError):
+                    self.addCleanup(h.close)
+            with mock.patch.object(oneri, "_http_post", side_effect=hatalar):
                 with self.assertRaises(oneri.OneriHatasi) as ctx:
                     oneri.gemini_cagir("istem")
             self.assertIn(beklenen, str(ctx.exception))
             self.assertNotIn("test-anahtari", str(ctx.exception))
+
+    def test_yogunlukta_ikinci_modele_gecilir(self):
+        basarili = {"candidates": [{"finishReason": "STOP", "content": {"parts": [{"text": "{}"}]}}]}
+        hata = self._http_hatasi(503, b'{"error": {"status": "UNAVAILABLE", "message": "The model is overloaded."}}')
+        with mock.patch.object(oneri, "_http_post", side_effect=[hata, basarili]) as sahte:
+            _metin, model = oneri.gemini_cagir("istem")
+        self.assertEqual(model, oneri.MODELLER[1])
+        self.assertIn(oneri.MODELLER[1], sahte.call_args.args[0])
+        # Anahtar hatası geçici değildir: ikinci model boşuna denenmez, Google'ın mesajı günlüğe gider
+        hata = self._http_hatasi(400, b'{"error": {"status": "INVALID_ARGUMENT", "message": "API_KEY_INVALID"}}')
+        with mock.patch.object(oneri, "_http_post", side_effect=[hata]) as sahte:
+            with self.assertRaises(oneri.OneriHatasi) as ctx:
+                oneri.gemini_cagir("istem")
+        self.assertEqual(sahte.call_count, 1)
+        self.assertIn("INVALID_ARGUMENT", ctx.exception.ayrinti)
 
     def test_engellenen_ve_yarim_kalan_yanit(self):
         for yanit, beklenen in [({"promptFeedback": {"blockReason": "SAFETY"}}, "SAFETY"),

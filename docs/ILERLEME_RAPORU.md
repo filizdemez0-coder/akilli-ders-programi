@@ -29,6 +29,6 @@
 | 10 | Seçmeli ders önerisi: ön eleme, Gemini API (ücretsiz), çıktı doğrulama, kural tabanlı yedek, AI günlüğü | ✅ Kod + 14 test. API anahtarı girilmezse kural tabanlı yedek çalışır |
 
 **Düzeltilen bilinen hatalar:** örnek verilerin geri gelmesi, canlıda varsayılan gizli anahtar, eski `frontend/init_db.py`.
-**Test:** 39/39 geçti.
+**Test:** 40/40 geçti.
 
 **Sonraki adım (Hafta 11):** alternatif programları karşılaştırma modülü; CSRF belirteci; `/cikis`'in POST'a çevrilmesi.

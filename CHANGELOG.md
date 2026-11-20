@@ -11,6 +11,13 @@ Uygulamanın çalışan sürümü `/saglik` adresinde ve sayfa altında görün�
 
 ---
 
+## [0.10.2] — 2026-11-20 · Gemini: yedek model ve hata ayrıntısı
+- Canlıda `gemini-3.8-flash` ücretsiz katmanda art arda HTTP 503 (yoğun) ve zaman aşımı verdi → modeller sırayla deneniyor:
+  birincisi 503/429/404/zaman aşımı verirse daha hafif `gemini-3.5-flash-lite` (ücretsiz) çağrılıyor. Anahtar hatası gibi
+  kalıcı hatalarda ikinci model boşuna denenmiyor. Zaman aşımı model başına 20 sn.
+- Google'ın hata metni (ör. `UNAVAILABLE: The model is overloaded`) AI günlüğüne yazılıyor; günlükte hangi modelin yanıt verdiği görünüyor.
+- Geçersiz anahtar tespiti Google'ın gerçek hata gövdesiyle (`details[].reason = API_KEY_INVALID`) doğrulandı. 1 yeni test (toplam 40).
+
 ## [0.10.1] — 2026-11-20 · Yapay zekâ sağlayıcısı: Claude → Google Gemini (ücretsiz)
 - Claude API ücretli olduğu (kredi yüklenemediği) için öneri modeli **Google Gemini API**'ye (`gemini-3.8-flash`, ücretsiz kota) taşındı.
   İstem, JSON şeması, çıktı doğrulama ve kural tabanlı yedek değişmedi; yalnızca model çağrısı (`gemini_cagir`) değişti.

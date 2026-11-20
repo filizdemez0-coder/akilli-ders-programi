@@ -23,10 +23,13 @@ import urllib.request
 
 from cakisma import GUNLER, cakisiyor_mu, dakikaya_cevir
 
-# Ücretsiz kotası olan model. Google modeli emekliye ayırırsa kod değişmeden GEMINI_MODEL ile değiştirilir.
-MODEL = os.environ.get("GEMINI_MODEL", "").strip() or "gemini-3.8-flash"
+# Ücretsiz kotası olan modeller, sırayla denenir: birincisi yoğunsa (503), kotası dolmuşsa (429), yoksa (404)
+# ya da zamanında yanıt vermezse daha hafif ve hızlı olan ikincisine geçilir.
+# Google bir modeli emekliye ayırırsa kod değişmeden GEMINI_MODEL ortam değişkeniyle birincisi değiştirilir.
+MODELLER = [os.environ.get("GEMINI_MODEL", "").strip() or "gemini-3.8-flash", "gemini-3.5-flash-lite"]
+MODEL = MODELLER[0]
 API_ADRESI = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-ZAMAN_ASIMI = 25   # saniye
+ZAMAN_ASIMI = 20   # saniye (iki model denenirse toplam 40 sn; gunicorn sınırı 90 sn)
 EN_FAZLA_ONERI = 3
 GEREKCE_UZUNLUGU = 400
 
@@ -70,9 +73,13 @@ YANIT_SEMASI = {
 
 
 class OneriHatasi(Exception):
-    def __init__(self, mesaj, durum="hata"):
+    """mesaj: öğrenciye gösterilir. ayrinti: yalnızca AI günlüğüne yazılır (ör. Google'ın hata metni).
+    gecici: True ise bir sonraki model denenebilir (yoğunluk, kota, zaman aşımı)."""
+    def __init__(self, mesaj, durum="hata", ayrinti="", gecici=False):
         super().__init__(mesaj)
         self.durum = durum
+        self.ayrinti = ayrinti
+        self.gecici = gecici
 
 
 # ------------------------------------------------------------------ 1. Kural tabanlı ön eleme
@@ -180,8 +187,17 @@ def _http_post(url, govde, anahtar):
         return json.loads(yanit.read().decode("utf-8"))
 
 
+def _google_hata_metni(govde):
+    """Google'ın hata gövdesinden kısa açıklama: {"error": {"status": ..., "message": ...}} (anahtar içermez)."""
+    try:
+        hata = json.loads(govde).get("error", {})
+        return f"{hata.get('status', '')}: {hata.get('message', '')}"[:200]
+    except (ValueError, AttributeError):
+        return govde[:200]
+
+
 def gemini_cagir(kullanici_istemi):
-    """Gemini API'yi çağırır, modelin ürettiği ham JSON metnini döndürür. Her hata OneriHatasi'na çevrilir."""
+    """Modelleri sırayla dener. (ham JSON metni, kullanılan model) döndürür; hepsi başarısızsa OneriHatasi."""
     govde = {
         "systemInstruction": {"parts": [{"text": SISTEM_ISTEMI}]},
         "contents": [{"role": "user", "parts": [{"text": kullanici_istemi}]}],
@@ -191,23 +207,42 @@ def gemini_cagir(kullanici_istemi):
             "maxOutputTokens": 8000,
         },
     }
+    ayrintilar = []
+    for model in MODELLER:
+        try:
+            return _modeli_cagir(model, govde), model
+        except OneriHatasi as e:
+            ayrintilar.append(f"{model}: {e.ayrinti or e}")
+            if not e.gecici or model == MODELLER[-1]:
+                e.ayrinti = " | ".join(ayrintilar)
+                raise
+
+
+def _modeli_cagir(model, govde):
     try:
-        veri = _http_post(API_ADRESI.format(model=MODEL), govde, _anahtar())
+        veri = _http_post(API_ADRESI.format(model=model), govde, _anahtar())
     except urllib.error.HTTPError as e:
         try:
-            ayrinti = e.read().decode("utf-8", "replace")[:500]
-        except OSError:
-            ayrinti = ""
+            ham_govde = e.read().decode("utf-8", "replace")
+        except (OSError, ValueError):
+            ham_govde = ""
         e.close()
-        if e.code in (401, 403) or "API_KEY_INVALID" in ayrinti:
-            raise OneriHatasi("Yapay zekâ API anahtarı geçersiz.") from None
+        ayrinti = f"HTTP {e.code} {_google_hata_metni(ham_govde)}".strip()
+        if e.code in (401, 403) or "API_KEY_INVALID" in ham_govde:
+            raise OneriHatasi("Yapay zekâ API anahtarı geçersiz.", ayrinti=ayrinti) from None
         if e.code == 429:
-            raise OneriHatasi("Yapay zekâ API'sinin ücretsiz istek sınırı aşıldı; biraz sonra tekrar deneyin.") from None
+            raise OneriHatasi("Yapay zekâ API'sinin ücretsiz istek sınırı aşıldı; biraz sonra tekrar deneyin.",
+                              ayrinti=ayrinti, gecici=True) from None
         if e.code == 404:
-            raise OneriHatasi(f"'{MODEL}' modeli bulunamadı (GEMINI_MODEL ortam değişkenini kontrol edin).") from None
-        raise OneriHatasi(f"Yapay zekâ API'si HTTP {e.code} hatası verdi.") from None
+            raise OneriHatasi(f"'{model}' modeli bulunamadı (GEMINI_MODEL ortam değişkenini kontrol edin).",
+                              ayrinti=ayrinti, gecici=True) from None
+        if e.code >= 500:
+            raise OneriHatasi("Yapay zekâ servisi şu an yoğun; biraz sonra tekrar deneyin.",
+                              ayrinti=ayrinti, gecici=True) from None
+        raise OneriHatasi(f"Yapay zekâ API'si HTTP {e.code} hatası verdi.", ayrinti=ayrinti) from None
     except (TimeoutError, urllib.error.URLError, OSError):
-        raise OneriHatasi("Yapay zekâ API'sine bağlanılamadı veya zamanında yanıt vermedi.") from None
+        raise OneriHatasi("Yapay zekâ API'sine bağlanılamadı veya zamanında yanıt vermedi.",
+                          ayrinti="zaman aşımı / bağlantı hatası", gecici=True) from None
     except ValueError:
         raise OneriHatasi("Yapay zekâ API'si geçersiz yanıt döndürdü.", "gecersiz") from None
 
@@ -301,20 +336,24 @@ def oneri_uret(secmeli_subeler, secilenler, profil, kalan_akts, gunluge_yaz=lamb
     try:
         ham = cagir(istem)
     except OneriHatasi as e:
-        gunluge_yaz(istem=istem, yanit=None, durum=e.durum, aciklama=str(e), model=MODEL)
+        aciklama = f"{e} [{e.ayrinti}]" if e.ayrinti else str(e)
+        gunluge_yaz(istem=istem, yanit=None, durum=e.durum, aciklama=aciklama, model=" → ".join(MODELLER))
         return yedek(str(e))
+    model = MODEL
+    if isinstance(ham, tuple):          # gemini_cagir (metin, kullanılan model) döndürür
+        ham, model = ham
 
     try:
         gecerli, genel_not, sorunlar = ai_yanitini_dogrula(ham, adaylar, kalan_akts)
     except OneriHatasi as e:
-        gunluge_yaz(istem=istem, yanit=ham, durum=e.durum, aciklama=str(e), model=MODEL)
+        gunluge_yaz(istem=istem, yanit=ham, durum=e.durum, aciklama=str(e), model=model)
         return yedek(str(e))
 
     if not gecerli:
-        gunluge_yaz(istem=istem, yanit=ham, durum="gecersiz", aciklama="; ".join(sorunlar) or "boş öneri listesi", model=MODEL)
+        gunluge_yaz(istem=istem, yanit=ham, durum="gecersiz", aciklama="; ".join(sorunlar) or "boş öneri listesi", model=model)
         return yedek("Yapay zekâ çıktısı doğrulamayı geçemedi.")
 
     gunluge_yaz(istem=istem, yanit=ham, durum="kismen_gecersiz" if sorunlar else "basarili",
-                aciklama="; ".join(sorunlar) or None, model=MODEL)
+                aciklama="; ".join(sorunlar) or None, model=model)
     return {"kaynak": "ai", "oneriler": gecerli, "genel_not": genel_not,
             "uyari": f"{len(sorunlar)} öneri doğrulamayı geçemediği için gösterilmedi." if sorunlar else ""}
