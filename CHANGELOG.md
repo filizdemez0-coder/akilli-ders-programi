@@ -11,7 +11,7 @@ Uygulamanın çalışan sürümü `/saglik` adresinde ve sayfa altında görün�
 
 ---
 
-## [0.10.0] — 2026-11-20 · Yapay zekâ bileşeni: seçmeli ders önerisi
+## [0.10.0] — 2026-11-20 · Yapay zekâ bileşeni: seçmeli ders önerisi (Git etiketi: `v0.10.0`, 0.9.0 ile birlikte yayımlandı)
 ### Eklenenler
 - `backend/oneri.py`: kural tabanlı ön eleme → Claude API (`claude-opus-5-5`, JSON şeması ile yapılandırılmış çıktı)
   → kodla çıktı doğrulama → hata/geçersiz çıktıda kural tabanlı yedek öneri. Sayfa: `/oneri`.
@@ -25,7 +25,7 @@ Uygulamanın çalışan sürümü `/saglik` adresinde ve sayfa altında görün�
 ### Düzeltilen hatalar
 - Örnek veriler her açılışta tamamlandığı için yöneticinin sildiği örnek dersler yeniden başlatmada geri geliyordu
   → örnek veri paketleri `Ayar.OrnekVeriSurumu` ile izleniyor, her paket yalnızca bir kez ekleniyor (regresyon testi eklendi).
-- Canlıda `GIZLI_ANAHTAR` tanımlanmazsa uygulama depodaki bilinen anahtarla açılıyordu → `CANLI_ORTAM=1` iken anahtar yoksa açılmıyor.
+- Canlıda `GIZLI_ANAHTAR` tanımlanmazsa uygulama depodaki bilinen anahtarla açılıyordu → `CANLI_ORTAM=1` iken anahtar yoksa açılışta rastgele güçlü bir anahtar üretiliyor.
 - Kullanılmayan, eski şemalı `frontend/init_db.py` kopyası kaldırıldı (tek kurulum betiği: `init_db.py`).
 
 ## [0.9.0] — 2026-11-20 · Harici API entegrasyonu: takvim

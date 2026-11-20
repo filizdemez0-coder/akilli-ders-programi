@@ -37,10 +37,12 @@ SURUM = "0.10.0"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("GIZLI_ANAHTAR", "akillidersprogrami_gizli_anahtar")
-# Hafta 10 düzeltmesi: canlıda anahtar unutulursa depodaki herkesin bildiği anahtarla açılmak yerine
-# uygulama hiç açılmaz (aksi hâlde oturum çerezi taklit edilip yönetici olunabilirdi).
+# Hafta 10 düzeltmesi: canlıda anahtar unutulursa depodaki herkesin bildiği anahtar KULLANILMAZ
+# (aksi hâlde oturum çerezi taklit edilip yönetici olunabilirdi). Bunun yerine her açılışta rastgele,
+# güçlü bir anahtar üretilir; tek bedeli, uygulama yeniden başlayınca kullanıcıların tekrar giriş yapmasıdır.
 if CANLI_ORTAM and not os.environ.get("GIZLI_ANAHTAR"):
-    raise RuntimeError("CANLI_ORTAM=1 iken GIZLI_ANAHTAR ortam değişkeni tanımlanmalıdır.")
+    app.secret_key = secrets.token_hex(32)
+    print("UYARI: GIZLI_ANAHTAR tanımlı değil; geçici rastgele anahtar üretildi.", file=sys.stderr)
 # Oturum yönetimi (Hafta 5): 30 dk sonra oturum düşer, çerez JavaScript ile okunamaz
 app.config.update(
     PERMANENT_SESSION_LIFETIME=timedelta(minutes=30),

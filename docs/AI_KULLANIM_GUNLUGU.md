@@ -25,7 +25,7 @@ Bu belge iki ayrı şeyi kaydeder:
 
 ### 20.11.2026 oturumunda yapay zekânın önerdiği ve kabul edilen değişiklikler
 - Örnek verilerin her açılışta geri gelmesi hatası → `Ayar.OrnekVeriSurumu` ile tek seferlik ekleme.
-- Canlıda gizli anahtar unutulursa bilinen anahtarla açılma riski → uygulama açılmıyor.
+- Canlıda gizli anahtar unutulursa bilinen anahtarla açılma riski → açılışta rastgele anahtar üretiliyor.
 - Eski `frontend/init_db.py` kopyası silindi.
 - `backend/takvim.py`, `backend/oneri.py`, ilgili sayfalar ve testler.
 
